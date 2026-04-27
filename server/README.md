@@ -1,1 +1,1 @@
-sudo docker run -p 5000:5000 flux-server
+ngrok http 9000
