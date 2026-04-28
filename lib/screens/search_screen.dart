@@ -1,12 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../main.dart';
 import '../providers/flux_provider.dart';
-import 'package:path_provider/path_provider.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -21,6 +20,13 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Video> _searchResults = [];
   bool _isLoading = false;
 
+  @override
+  void dispose() {
+    yt.close();
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
     setState(() => _isLoading = true);
@@ -31,6 +37,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint("FLUX: Search error: $e");
       setState(() => _isLoading = false);
     }
   }
@@ -55,10 +62,13 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   const Text(
                     "Salvar em Playlist",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 10),
-                  // Listar Playlists Existentes
+                  // Playlists existentes
                   ...provider.playlists.keys.map(
                     (name) => ListTile(
                       leading: const Icon(
@@ -96,21 +106,13 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ),
                                 TextButton(
                                   onPressed: () {
-                                    provider.createPlaylist(
-                                      textController.text,
-                                    );
-                                      Future<void> findMyFiles() async {
-                                        Directory? directory;
-                                        if (Platform.isAndroid) {
-                                          directory = await getExternalStorageDirectory();
-                                        } else {
-                                          directory = await getApplicationDocumentsDirectory();
-                                        }
-                                        debugPrint("FLUX AUDIO FOLDER IS EXACTLY HERE: ${directory?.path}");
-                                      }
-                                    findMyFiles();
+                                    if (textController.text.isNotEmpty) {
+                                      provider.createPlaylist(
+                                        textController.text,
+                                      );
+                                    }
                                     Navigator.pop(context);
-                                    setModalState(() {}); // Atualiza o modal
+                                    setModalState(() {});
                                   },
                                   child: const Text("Criar"),
                                 ),
@@ -128,10 +130,73 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Future<void> _onVideoTap(BuildContext context, Video video) async {
     final provider = Provider.of<FluxProvider>(context, listen: false);
 
+    if (provider.baseUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Configure o servidor primeiro nas configurações (⚙️).",
+          ),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Carregando ${video.title}...")),
+    );
+
+    final serverUrl = "${provider.baseUrl}/get_audio?id=${video.id.value}";
+
+    try {
+      debugPrint("FLUX: Calling server: $serverUrl");
+      final response = await http.get(
+        Uri.parse(serverUrl),
+        headers: {'ngrok-skip-browser-warning': 'true'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint("FLUX: Stream URL received, playing...");
+
+        final trackMap = {
+          "track_name": video.title,
+          "artist": video.author,
+          "album_image_url": video.thumbnails.lowResUrl,
+          "video_id": video.id.value,
+        };
+
+        // Adiciona à queue com apenas essa faixa para controles prev/next
+        provider.playPlaylist([trackMap]);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Erro do servidor: ${response.statusCode}. Verifique a URL nas configurações.",
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("FLUX: Connection error: $e");
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Erro de conexão. Verifique se o servidor está online e a URL correta.",
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       children: [
         Padding(
@@ -140,8 +205,18 @@ class _SearchScreenState extends State<SearchScreen> {
             controller: _searchController,
             onSubmitted: _performSearch,
             decoration: InputDecoration(
-              hintText: 'Search songs...',
+              hintText: 'Buscar músicas no YouTube...',
               prefixIcon: const Icon(Icons.search),
+              suffixIcon:
+                  _searchController.text.isNotEmpty
+                      ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchResults = []);
+                        },
+                      )
+                      : null,
               filled: true,
               fillColor: FluxApp.cardColor,
               border: OutlineInputBorder(
@@ -159,18 +234,48 @@ class _SearchScreenState extends State<SearchScreen> {
                       color: FluxApp.accentColor,
                     ),
                   )
+                  : _searchResults.isEmpty
+                  ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search,
+                          size: 64,
+                          color: FluxApp.secondaryTextColor.withOpacity(0.4),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Pesquise por músicas ou artistas",
+                          style: TextStyle(
+                            color: FluxApp.secondaryTextColor,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
                   : ListView.builder(
                     itemCount: _searchResults.length,
                     padding: const EdgeInsets.only(bottom: 100),
                     itemBuilder: (context, index) {
                       final video = _searchResults[index];
                       return ListTile(
-                        leading: Image.network(
-                          video.thumbnails.lowResUrl,
-                          width: 50,
-                          height: 50,
-                          fit: BoxFit.cover,
-                        ),
+                        leading:
+                            video.thumbnails.lowResUrl.isNotEmpty
+                                ? Image.network(
+                                  video.thumbnails.lowResUrl,
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stackTrace) =>
+                                          const Icon(
+                                            Icons.music_note,
+                                            size: 50,
+                                          ),
+                                )
+                                : const Icon(Icons.music_note, size: 50),
                         title: Text(
                           video.title,
                           maxLines: 1,
@@ -181,47 +286,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           icon: const Icon(Icons.playlist_add),
                           onPressed: () => _showPlaylistOptions(video),
                         ),
-                        onTap: () async {
-                          debugPrint(
-                            "FLUX: 1. Cliquei na música: ${video.title}",
-                          );
-
-                          final serverUrl =
-                              "${provider.baseUrl}/get_audio?id=${video.id.value}";
-
-                          try {
-                            debugPrint(
-                              "FLUX: 2. Chamando servidor: $serverUrl",
-                            );
-                            final response = await http.get(
-                              Uri.parse(serverUrl),
-                              headers: {'ngrok-skip-browser-warning': 'true'},
-                            );
-
-                            debugPrint(
-                              "FLUX: 3. Resposta recebida! Status: ${response.statusCode}",
-                            );
-
-// ... dentro do onTap no final de search_screen.dart
-                          if (response.statusCode == 200) {
-                              final data = json.decode(response.body);
-                              debugPrint("FLUX: 4. Deu bom! URL recebida, dando play...");
-                              
-                              // Transformamos o Video no seu modelo JSON antes de tocar
-                              final trackMap = {
-                                "track_name": video.title,
-                                "artist": video.author,
-                                "album_image_url": video.thumbnails.lowResUrl,
-                                "video_id": video.id.value,
-                              };
-                              
-                              provider.playTrack(trackMap, data['url']); // Alterado de playVideo para playTrack
-                            } 
-// ...
-                          } catch (e) {
-                            debugPrint("FLUX: ERRO DE CONEXÃO/FLUTTER: $e");
-                          }
-                        },
+                        onTap: () => _onVideoTap(context, video),
                       );
                     },
                   ),

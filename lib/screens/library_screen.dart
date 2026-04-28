@@ -1,42 +1,61 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:file_picker/file_picker.dart'; // Importe o file_picker
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../main.dart';
 import '../providers/flux_provider.dart';
 import 'playlist_detail_screen.dart';
 
+// dart:io só importado no nativo
+import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
+
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
 
-  // Nova função para abrir o explorador e ler o JSON
-  Future<void> _importJsonPlaylist(BuildContext context, FluxProvider provider) async {
+  Future<void> _importJsonPlaylist(
+    BuildContext context,
+    FluxProvider provider,
+  ) async {
     try {
-      // 1. Abre o explorador de arquivos focado em JSON
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
+        withData: true, // Necessário para web (lê bytes da memória)
       );
 
-      // 2. Se o usuário escolheu um arquivo
-      if (result != null && result.files.single.path != null) {
-        File file = File(result.files.single.path!);
-        
-        // Lê o conteúdo do arquivo
-        String jsonString = await file.readAsString();
-        List<dynamic> data = json.decode(jsonString);
+      if (result != null) {
+        String jsonString;
 
-        // Pega o nome do arquivo e remove o ".json" para usar como nome da playlist
+        if (kIsWeb) {
+          // Web: lê da memória (bytes)
+          final bytes = result.files.single.bytes;
+          if (bytes == null) {
+            throw Exception("Não foi possível ler o arquivo no navegador.");
+          }
+          jsonString = utf8.decode(bytes);
+        } else {
+          // Mobile/Desktop: lê do sistema de arquivos
+          final path = result.files.single.path;
+          if (path == null) {
+            throw Exception("Caminho do arquivo não encontrado.");
+          }
+          jsonString = await File(path).readAsString();
+        }
+
+        List<dynamic> data = json.decode(jsonString);
         String fileName = result.files.single.name;
         String playlistName = fileName.replaceAll(RegExp(r'\.json$'), '');
 
-        // 3. Manda para o provider processar e salvar
         await provider.importPlaylistFromJson(playlistName, data);
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("${data.length} músicas importadas para '$playlistName'!")),
+            SnackBar(
+              content: Text(
+                "${data.length} músicas importadas para '$playlistName'!",
+              ),
+            ),
           );
         }
       }
@@ -44,7 +63,7 @@ class LibraryScreen extends StatelessWidget {
       debugPrint("Erro ao importar: $e");
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Erro ao importar arquivo JSON.")),
+          SnackBar(content: Text("Erro ao importar: ${e.toString()}")),
         );
       }
     }
@@ -53,9 +72,9 @@ class LibraryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<FluxProvider>(context);
+
     return ListView(
       children: [
-        // BOTÃO ATUALIZADO
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: ElevatedButton.icon(
@@ -70,31 +89,41 @@ class LibraryScreen extends StatelessWidget {
           ),
         ),
         const Divider(height: 1),
-        
-        ...provider.playlists.keys
-              .map(
-                (name) => ListTile(
-                  leading: const Icon(
-                    Icons.library_music,
-                    color: FluxApp.accentColor,
+        if (provider.playlists.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32.0),
+            child: Center(
+              child: Text(
+                "Nenhuma playlist ainda.\nImporte um .json para começar!",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: FluxApp.secondaryTextColor),
+              ),
+            ),
+          )
+        else
+          ...provider.playlists.keys.map(
+            (name) => ListTile(
+              leading: const Icon(
+                Icons.library_music,
+                color: FluxApp.accentColor,
+              ),
+              title: Text(name),
+              subtitle: Text("${provider.playlists[name]!.length} músicas"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (context) => PlaylistDetailScreen(
+                          playlistName: name,
+                          tracks: provider.playlists[name]!,
+                        ),
                   ),
-                  title: Text(name),
-                  subtitle: Text("${provider.playlists[name]!.length} músicas"),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder:
-                            (context) => PlaylistDetailScreen(
-                              playlistName: name,
-                              tracks: provider.playlists[name]!, 
-                            ),
-                      ),
-                    );
-                  },
-                ),
-              )
-              .toList(),
-    ],);
+                );
+              },
+            ),
+          ),
+      ],
+    );
   }
 }

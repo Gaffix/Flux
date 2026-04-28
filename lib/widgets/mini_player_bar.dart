@@ -10,23 +10,28 @@ class MiniPlayerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<FluxProvider>(context);
-    // Alterado para currentTrack
     if (provider.currentTrack == null) return const SizedBox.shrink();
+
+    final track = provider.currentTrack!;
+    final imageUrl = track['album_image_url'] ?? '';
 
     return Container(
       color: const Color(0xFF181818),
       height: 75,
       child: Column(
         children: [
+          // Barra de progresso
           StreamBuilder<Duration>(
             stream: provider.player.positionStream,
             builder: (context, snapshot) {
               final position = snapshot.data ?? Duration.zero;
               final total = provider.player.duration ?? Duration.zero;
+              final progress =
+                  total.inMilliseconds > 0
+                      ? position.inMilliseconds / total.inMilliseconds
+                      : 0.0;
               return LinearProgressIndicator(
-                value: total.inMilliseconds > 0
-                        ? position.inMilliseconds / total.inMilliseconds
-                        : 0.0,
+                value: progress.clamp(0.0, 1.0),
                 backgroundColor: FluxApp.progressTrackColor,
                 valueColor: const AlwaysStoppedAnimation<Color>(
                   FluxApp.accentColor,
@@ -37,43 +42,74 @@ class MiniPlayerBar extends StatelessWidget {
           ),
           ListTile(
             dense: true,
-            leading: Image.network(
-              provider.currentTrack!['album_image_url'] ?? '', // Lendo do JSON
-              width: 45,
-              height: 45,
-              fit: BoxFit.cover,
-            ),
+            leading:
+                imageUrl.isNotEmpty
+                    ? Image.network(
+                      imageUrl,
+                      width: 45,
+                      height: 45,
+                      fit: BoxFit.cover,
+                      errorBuilder:
+                          (context, error, stackTrace) => Container(
+                            width: 45,
+                            height: 45,
+                            color: FluxApp.cardColor,
+                            child: const Icon(
+                              Icons.music_note,
+                              color: FluxApp.accentColor,
+                            ),
+                          ),
+                    )
+                    : Container(
+                      width: 45,
+                      height: 45,
+                      color: FluxApp.cardColor,
+                      child: const Icon(
+                        Icons.music_note,
+                        color: FluxApp.accentColor,
+                      ),
+                    ),
             title: Text(
-              provider.currentTrack!['track_name'] ?? '', // Lendo do JSON
+              track['track_name'] ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            subtitle: Text(provider.currentTrack!['artist'] ?? '', maxLines: 1), // Lendo do JSON
-// Inside the trailing: StreamBuilder of MiniPlayerBar
-trailing: Row(
-  mainAxisSize: MainAxisSize.min,
-  children: [
-    IconButton(
-      icon: const Icon(Icons.skip_previous),
-      onPressed: () => provider.skipPrevious(),
-    ),
-    StreamBuilder<PlayerState>(
-      stream: provider.player.playerStateStream,
-      builder: (context, snapshot) {
-        final playing = snapshot.data?.playing ?? false;
-        return IconButton(
-          icon: Icon(playing ? Icons.pause : Icons.play_arrow, size: 30),
-          onPressed: () => playing ? provider.player.pause() : provider.player.play(),
-        );
-      },
-    ),
-    IconButton(
-      icon: const Icon(Icons.skip_next),
-      onPressed: () => provider.skipNext(),
-    ),
-  ],
-),
+            subtitle: Text(
+              track['artist'] ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.skip_previous),
+                  onPressed: () => provider.skipPrevious(),
+                ),
+                StreamBuilder<PlayerState>(
+                  stream: provider.player.playerStateStream,
+                  builder: (context, snapshot) {
+                    final playing = snapshot.data?.playing ?? false;
+                    return IconButton(
+                      icon: Icon(
+                        playing ? Icons.pause : Icons.play_arrow,
+                        size: 30,
+                      ),
+                      onPressed:
+                          () =>
+                              playing
+                                  ? provider.player.pause()
+                                  : provider.player.play(),
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.skip_next),
+                  onPressed: () => provider.skipNext(),
+                ),
+              ],
+            ),
           ),
         ],
       ),

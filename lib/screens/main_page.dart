@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../main.dart';
 import '../widgets/mini_player_bar.dart';
 import 'package:provider/provider.dart';
@@ -27,7 +28,10 @@ class _MainPageState extends State<MainPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('FLUX', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
+        title: const Text(
+          'FLUX',
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -38,7 +42,6 @@ class _MainPageState extends State<MainPage> {
         elevation: 0,
       ),
       body: _widgetOptions.elementAt(_selectedIndex),
-      // MiniPlayer agora é injetado automaticamente pelo Provider
       bottomSheet: const MiniPlayerBar(),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
@@ -63,29 +66,58 @@ class _MainPageState extends State<MainPage> {
       ),
     );
   }
-    void _showSettingsDialog(BuildContext context) {
+
+  void _showSettingsDialog(BuildContext context) {
     final provider = Provider.of<FluxProvider>(context, listen: false);
     final controller = TextEditingController(text: provider.baseUrl);
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Configurar Servidor"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "https://seu-ngrok.ngrok-free.app"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar")),
-          ElevatedButton(
-            onPressed: () {
-              provider.setBaseUrl(controller.text);
-              Navigator.pop(context);
-            },
-            child: const Text("Salvar"),
+      builder:
+          (context) => AlertDialog(
+            title: const Text("Configurar Servidor"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    hintText: "https://seu-ngrok.ngrok-free.app",
+                    labelText: "URL do servidor",
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Aviso extra para o usuário web sobre CORS
+                if (kIsWeb)
+                  const Text(
+                    "⚠️ No navegador, o servidor precisa ter CORS configurado para aceitar requisições.",
+                    style: TextStyle(fontSize: 12, color: Colors.orange),
+                  ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Exemplo: https://abc123.ngrok-free.app",
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancelar"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  provider.setBaseUrl(controller.text.trim());
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Servidor salvo!")),
+                  );
+                },
+                child: const Text("Salvar"),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 }
