@@ -122,7 +122,3 @@ Copie esse endereço.
 ## ✅ Pronto!
 
 Agora o aplicativo está conectado ao servidor local através do túnel do Ngrok e totalmente funcional.
-
-```
-```
-
