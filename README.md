@@ -25,7 +25,7 @@ Antes de começar, instale:
 
    ```bash
    ngrok config add-authtoken SUA_CHAVE_AQUI
-````
+   ```
 
 5. Teste se está funcionando:
 
