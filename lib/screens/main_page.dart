@@ -7,6 +7,7 @@ import '../providers/flux_provider.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
 import 'search_screen.dart';
+import 'music_screen.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
