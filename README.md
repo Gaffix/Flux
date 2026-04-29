@@ -1,4 +1,3 @@
-````markdown
 # 🚀 Flux — Guia de Configuração e Execução
 
 Este guia explica, passo a passo, como configurar o ambiente necessário para rodar o projeto **Flux**, incluindo o app Flutter, o servidor em Docker e o túnel externo via Ngrok.
