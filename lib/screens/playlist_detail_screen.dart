@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../providers/flux_provider.dart';
+import '../widgets/mini_player_bar.dart';
 
 // dart:io só existe no mobile/desktop, nunca no web
 import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
@@ -105,9 +106,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            success
-                                ? "Download concluído!"
-                                : "Erro ao baixar.",
+                            success ? "Download concluído!" : "Erro ao baixar.",
                           ),
                         ),
                       );
@@ -369,10 +368,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                               : "ORDEM ALEATÓRIA",
                         ),
                         onPressed: () {
-                          provider.playPlaylist(
-                            filteredTracks,
-                            shuffle: true,
-                          );
+                          provider.playPlaylist(filteredTracks, shuffle: true);
                         },
                       ),
                     ),
@@ -385,6 +381,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                               child: Text("Nenhuma música encontrada."),
                             )
                             : ListView.builder(
+                              padding: const EdgeInsets.only(bottom: 8),
                               itemCount: filteredTracks.length,
                               itemBuilder: (context, index) {
                                 final track = filteredTracks[index];
@@ -398,14 +395,11 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                             height: 50,
                                             fit: BoxFit.cover,
                                             errorBuilder:
-                                                (
-                                                  context,
-                                                  error,
-                                                  stackTrace,
-                                                ) => const Icon(
-                                                  Icons.music_note,
-                                                  size: 50,
-                                                ),
+                                                (context, error, stackTrace) =>
+                                                    const Icon(
+                                                      Icons.music_note,
+                                                      size: 50,
+                                                    ),
                                           )
                                           : const Icon(
                                             Icons.music_note,
@@ -433,6 +427,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                               },
                             ),
                   ),
+                  // Mini player fixo acima dos botões do sistema
+                  SafeArea(top: false, child: MiniPlayerBar()),
                 ],
               ),
     );
