@@ -65,3 +65,65 @@ flutter pub get
    ```
 
 O app será iniciado no dispositivo.
+
+---
+
+## 🐳 4. Configurando e Rodando o Servidor com Docker
+
+1. Abra o **Docker Desktop**
+
+2. No terminal, vá até a pasta `server` do projeto:
+
+   ```bash
+   cd server
+   ```
+
+3. Construa o ambiente Docker:
+
+   ```bash
+   docker build -t flux .
+   ```
+
+4. Inicie o container:
+
+   ```bash
+   docker run -p 9000:9000 flux
+   ```
+
+O servidor estará rodando localmente na porta **9000**.
+
+---
+
+## 🔗 5. Expondo o Servidor com Ngrok
+
+Em **um novo terminal**, execute:
+
+```bash
+ngrok http 9000
+```
+
+O Ngrok irá gerar um endereço público na seção:
+
+```
+Forwarding
+```
+
+Copie esse endereço.
+
+---
+
+## ⚙️ 6. Conectando o App ao Servidor
+
+1. Abra o aplicativo no celular
+2. Clique no ícone de **engrenagem**
+3. Cole o endereço gerado pelo Ngrok (Forwarding) no campo indicado
+
+---
+
+## ✅ Pronto!
+
+Agora o aplicativo está conectado ao servidor local através do túnel do Ngrok e totalmente funcional.
+
+```
+```
+
