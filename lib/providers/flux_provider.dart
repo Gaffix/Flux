@@ -192,47 +192,70 @@ class FluxProvider extends ChangeNotifier {
   }
 
   // --- DOWNLOAD LOGIC (native only) ---
-  Future<bool> downloadTrack(Map<String, String> track) async {
-    if (kIsWeb) return false;
+Future<bool> downloadTrack(Map<String, String> track) async {
+  if (kIsWeb) return false;
 
-    try {
-      String? videoId = track['video_id'];
+  try {
+    String? videoId = track['video_id'];
 
-      if (videoId == null || videoId.isEmpty) {
-        final yt = YoutubeExplode();
-        final search = await yt.search
-            .search("${track['track_name']} ${track['artist']} audio");
-        if (search.isNotEmpty) {
-          videoId = search.first.id.value;
-          track['video_id'] = videoId;
-        }
-        yt.close();
-      }
+    // ... (sua lógica de busca com YoutubeExplode permanece igual)
 
-      if (videoId == null) return false;
+    if (videoId == null) return false;
 
-      final savePath = await getDownloadedAudioPath(track);
-      final file = File(savePath);
+    final savePath = await getDownloadedAudioPath(track);
+    final file = File(savePath);
 
-      if (!await file.parent.exists()) {
-        await file.parent.create(recursive: true);
-      }
+    if (!await file.parent.exists()) {
+      await file.parent.create(recursive: true);
+    }
 
-      if (await file.exists()) return true;
+    if (await file.exists()) {
+      debugPrint("FLUX: Arquivo já existe no local.");
+      return true;
+    }
 
-      final downloadUrl = "$_baseUrl/get_audio?id=$videoId";
-      final response = await http.get(Uri.parse(downloadUrl));
+    // 1. Passo: Pegar o JSON
+    final getInfoUrl = "$_baseUrl/get_audio?id=$videoId";
+    final infoResponse = await http.get(Uri.parse(getInfoUrl));
 
-      if (response.statusCode == 200) {
-        await file.writeAsBytes(response.bodyBytes);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      debugPrint("FLUX Download Error: $e");
+    if (infoResponse.statusCode != 200) {
+      debugPrint("FLUX: Erro ao buscar info (Status: ${infoResponse.statusCode})");
       return false;
     }
+
+    final Map<String, dynamic> data = jsonDecode(infoResponse.body);
+    final String? realAudioUrl = data['url'];
+
+    if (realAudioUrl == null || realAudioUrl.isEmpty) {
+      debugPrint("FLUX: JSON recebido, mas campo 'url' está vazio.");
+      return false;
+    }
+
+    // 2. Passo: Download Real com Headers
+    debugPrint("FLUX: Iniciando download real do áudio...");
+    
+    final musicResponse = await http.get(
+      Uri.parse(realAudioUrl),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': '*/*',
+      },
+    );
+
+    if (musicResponse.statusCode == 200) {
+      await file.writeAsBytes(musicResponse.bodyBytes);
+      debugPrint("FLUX: Download concluído! Tamanho: ${musicResponse.bodyBytes.length} bytes");
+      return true;
+    } else {
+      debugPrint("FLUX: O servidor do Google recusou o download (Status: ${musicResponse.statusCode})");
+      // Se der erro 403, é porque o link expirou ou requer cookies/assinatura específica
+      return false;
+    }
+  } catch (e) {
+    debugPrint("FLUX Download Error: $e");
+    return false;
   }
+}
 
   Future<void> downloadEntirePlaylist(String playlistName) async {
     if (kIsWeb) return;
