@@ -210,11 +210,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       );
     }
 
-    final int index = filteredTracks.indexOf(track);
-    provider.currentQueue = List.from(filteredTracks);
-    provider.playPlaylist(filteredTracks.sublist(index >= 0 ? index : 0));
+    // playTrack já resolve o video_id e busca a URL no servidor internamente
+    provider.playTrack(track);
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<FluxProvider>(context, listen: false);
@@ -435,4 +434,3 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     );
   }
 }
-
