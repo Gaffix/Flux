@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../main.dart';
 import '../providers/flux_provider.dart';
+import '../screens/lyrics_view.dart';
 import '../screens/music_screen.dart'; // Importe a tela de música aqui
 
 class MiniPlayerBar extends StatelessWidget {
@@ -121,13 +122,23 @@ class MiniPlayerBar extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.skip_previous),
-                    onPressed: () => provider.skipPrevious(),
-                  ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // --- NOVO BOTÃO DE LETRAS NO PLAYER BAR ---
+                    IconButton(
+                      icon: const Icon(Icons.lyrics_outlined, size: 22),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const LyricsView()),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.skip_previous),
+                      onPressed: () => provider.skipPrevious(),
+                    ),
                   StreamBuilder<PlayerState>(
                     stream: provider.player.playerStateStream,
                     builder: (context, snapshot) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/flux_provider.dart';
+import '../screens/lyrics_view.dart';
 import '../main.dart';
 
 class MusicScreen extends StatelessWidget {
@@ -50,9 +51,16 @@ class MusicScreen extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const SizedBox(
-                    width: 48,
-                  ), // Espaçador para centralizar o texto
+                  // --- NOVO BOTÃO DE LETRAS ---
+                  IconButton(
+                    icon: const Icon(Icons.lyrics, color: FluxApp.accentColor, size: 24),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const LyricsView()),
+                      );
+                    },
+                  ),
                   const Text(
                     "TOCANDO AGORA",
                     style: TextStyle(
@@ -63,11 +71,7 @@ class MusicScreen extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                      size: 28,
-                    ),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],

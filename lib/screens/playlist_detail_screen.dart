@@ -426,8 +426,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                           ),
                                       ],
                                     ),
-                                                                          title: Text(track['track_name'] ?? ''),
-                                                                          subtitle: Text(status == "QUEUED" ? "Na fila..." : track['artist'] ?? ''),
+                                    title: Text(track['track_name'] ?? ''),
+                                    subtitle: Text(status == "QUEUED" ? "Na fila..." : track['artist'] ?? ''),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
