@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../providers/flux_provider.dart';
 import '../widgets/mini_player_bar.dart';
+import '../main.dart';
 
 // dart:io só existe no mobile/desktop, nunca no web
 import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
@@ -383,46 +384,70 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                             : ListView.builder(
                               padding: const EdgeInsets.only(bottom: 8),
                               itemCount: filteredTracks.length,
+                              // Dentro do ListView.builder da PlaylistDetailScreen
                               itemBuilder: (context, index) {
                                 final track = filteredTracks[index];
-                                return ListTile(
-                                  leading:
-                                      (track['album_image_url'] ?? '')
-                                              .isNotEmpty
-                                          ? Image.network(
-                                            track['album_image_url']!,
-                                            width: 50,
-                                            height: 50,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) =>
-                                                    const Icon(
-                                                      Icons.music_note,
-                                                      size: 50,
-                                                    ),
-                                          )
-                                          : const Icon(
-                                            Icons.music_note,
-                                            size: 50,
-                                          ),
-                                  title: Text(
-                                    track['track_name'] ?? 'Desconhecido',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(track['artist'] ?? ''),
-                                  trailing: IconButton(
-                                    icon: const Icon(Icons.more_vert),
-                                    onPressed:
-                                        () => _showTrackOptions(
-                                          context,
-                                          track,
-                                          provider,
-                                        ),
-                                  ),
-                                  onTap:
-                                      () =>
-                                          _onTrackTap(context, track, provider),
+                                final videoId = track['video_id'] ?? '';
+                                
+                                return Consumer<FluxProvider>(
+                                  builder: (context, provider, child) {
+                                    final status = provider.getTrackStatus(videoId);
+                                    
+                                    return ListTile(
+                                      leading: Stack(
+  alignment: Alignment.center,
+  children: [
+    // Este é o código de imagem que você já tem no seu arquivo original:
+    (track['album_image_url'] ?? '').isNotEmpty
+        ? Image.network(
+            track['album_image_url']!,
+            width: 50,
+            height: 50,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.music_note, size: 50),
+          )
+        : const Icon(Icons.music_note, size: 50),
+        
+    // Camada de progresso por cima da imagem
+    if (status == "DOWNLOADING" && provider.getProgress(videoId) != null)
+      Container(
+        width: 50,
+        height: 50,
+        color: Colors.black45,
+        child: ValueListenableBuilder<double>(
+          valueListenable: provider.getProgress(videoId)!,
+          builder: (context, value, _) => CircularProgressIndicator(
+            value: value,
+            color: FluxApp.accentColor,
+            strokeWidth: 3,
+          ),
+        ),
+      ),
+  ],
+),
+                                      title: Text(track['track_name'] ?? ''),
+                                      subtitle: Text(status == "QUEUED" ? "Na fila..." : track['artist'] ?? ''),
+trailing: Row(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    // Show a checkmark if downloaded, otherwise nothing
+    if (status == "DOWNLOADED")
+      Icon(Icons.check_circle, color: FluxApp.accentColor),
+    
+    // The clickable "Three Dots" button
+    IconButton(
+      icon: const Icon(Icons.more_vert),
+      onPressed: () {
+        // This calls the menu logic you already defined in your class
+        _showTrackOptions(context, track, provider);
+      },
+    ),
+  ],
+),
+                                      onTap: () => _onTrackTap(context, track, provider),
+                                    );
+                                  },
                                 );
                               },
                             ),

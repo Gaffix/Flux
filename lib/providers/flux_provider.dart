@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:collection';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
@@ -12,6 +13,19 @@ class FluxProvider extends ChangeNotifier {
   final AudioPlayer player = AudioPlayer();
   String _baseUrl = "";
   String get baseUrl => _baseUrl;
+  // --- NOVAS VARIÁVEIS DE ESTADO (Inspiradas no DownloadManager) ---
+  final Queue<Map<String, String>> _downloadQueue = Queue();
+  final Set<String> _activeDownloads = {};
+  final Map<String, ValueNotifier<double>> _progressNotifiers = {};
+  final int _maxConcurrent = 3;
+
+  // Mapa para rastrear o status (Útil para a UI)
+  // Status: "NONE", "QUEUED", "DOWNLOADING", "DOWNLOADED"
+  final Map<String, String> _trackStatuses = {};
+
+  // Getters para a UI
+  ValueNotifier<double>? getProgress(String videoId) => _progressNotifiers[videoId];
+  String getTrackStatus(String videoId) => _trackStatuses[videoId] ?? "NONE";
 
   Map<String, String>? currentTrack;
   List<Map<String, String>> currentQueue = [];
@@ -39,6 +53,77 @@ class FluxProvider extends ChangeNotifier {
   Future<void> saveToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('flux_data', json.encode(playlists));
+  }
+
+  Future<void> enqueueDownload(Map<String, String> track) async {
+    final videoId = await _resolveVideoId(track);
+    if (videoId == null) return;
+
+    if (await isTrackDownloaded(track)) {
+      _trackStatuses[videoId] = "DOWNLOADED";
+      notifyListeners();
+      return;
+    }
+
+    if (_activeDownloads.contains(videoId) || _downloadQueue.any((t) => t['video_id'] == videoId)) {
+      return; // Já está na fila ou baixando
+    }
+
+    _trackStatuses[videoId] = "QUEUED";
+    _downloadQueue.add(track);
+    notifyListeners();
+    _processNextDownload();
+  }
+
+  Future<void> _processNextDownload() async {
+    if (_activeDownloads.length >= _maxConcurrent || _downloadQueue.isEmpty) return;
+
+    final track = _downloadQueue.removeFirst();
+    final videoId = track['video_id']!;
+
+    _activeDownloads.add(videoId);
+    _trackStatuses[videoId] = "DOWNLOADING";
+    _progressNotifiers[videoId] = ValueNotifier(0.0);
+    notifyListeners();
+
+    try {
+      await _executeDownload(track, videoId);
+      _trackStatuses[videoId] = "DOWNLOADED";
+    } catch (e) {
+      _trackStatuses[videoId] = "NONE";
+      debugPrint("Erro no download: $e");
+    } finally {
+      _activeDownloads.remove(videoId);
+      _progressNotifiers[videoId]?.dispose();
+      _progressNotifiers.remove(videoId);
+      notifyListeners();
+      _processNextDownload(); // Tenta o próximo da fila
+    }
+  }
+
+  Future<void> _executeDownload(Map<String, String> track, String videoId) async {
+    final savePath = await getDownloadedAudioPath(track);
+    final file = File(savePath);
+
+    final streamUrl = await _fetchStreamUrl(videoId);
+    if (streamUrl == null) throw Exception("URL não encontrada");
+
+    final request = http.Request('GET', Uri.parse(streamUrl));
+    request.headers['ngrok-skip-browser-warning'] = 'true';
+    
+    final response = await http.Client().send(request);
+    final total = response.contentLength ?? 0;
+    int received = 0;
+
+    final bytes = <int>[];
+    await for (var chunk in response.stream) {
+      bytes.addAll(chunk);
+      received += chunk.length;
+      if (total > 0) {
+        _progressNotifiers[videoId]?.value = received / total;
+      }
+    }
+    await file.writeAsBytes(bytes);
   }
 
   // --- IMPORT PLAYLIST ---
@@ -196,82 +281,11 @@ class FluxProvider extends ChangeNotifier {
   }
 
   // --- DOWNLOAD LOGIC (native only) ---
-  Future<bool> downloadTrack(Map<String, String> track) async {
-    if (kIsWeb) return false;
-
-    try {
-      // 1. Usar a função que você já criou para garantir que o video_id existe
-      // (Isso substitui aquele seu comentário da lógica do YoutubeExplode)
-      String? videoId = await _resolveVideoId(track);
-
-      if (videoId == null) return false;
-
-      final savePath = await getDownloadedAudioPath(track);
-      final file = File(savePath);
-
-      if (!await file.parent.exists()) {
-        await file.parent.create(recursive: true);
-      }
-
-      if (await file.exists()) {
-        debugPrint("FLUX: Arquivo já existe no local.");
-        return true;
-      }
-
-      // 2. Passo: Pegar o JSON da sua API com o header do NGROK!
-      final getInfoUrl = "$_baseUrl/get_audio?id=$videoId";
-
-      final infoResponse = await http.get(
-        Uri.parse(getInfoUrl),
-        // CORREÇÃO: Esse header impede que o ngrok retorne um HTML de aviso
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
-
-      if (infoResponse.statusCode != 200) {
-        debugPrint(
-          "FLUX: Erro ao buscar info (Status: ${infoResponse.statusCode})",
-        );
-        return false;
-      }
-
-      final Map<String, dynamic> data = jsonDecode(infoResponse.body);
-      final String? realAudioUrl = data['url'];
-
-      if (realAudioUrl == null || realAudioUrl.isEmpty) {
-        debugPrint("FLUX: JSON recebido, mas campo 'url' está vazio.");
-        return false;
-      }
-
-      // 3. Passo: Download Real com Headers
-      debugPrint("FLUX: Iniciando download real do áudio...");
-
-      final musicResponse = await http.get(
-        Uri.parse(realAudioUrl),
-        headers: {
-          'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Accept': '*/*',
-        },
-      );
-
-      if (musicResponse.statusCode == 200) {
-        await file.writeAsBytes(musicResponse.bodyBytes);
-        debugPrint(
-          "FLUX: Download concluído! Tamanho: ${musicResponse.bodyBytes.length} bytes",
-        );
-        return true;
-      } else {
-        debugPrint(
-          "FLUX: O servidor do Google recusou o download (Status: ${musicResponse.statusCode})",
-        );
-        // Se der erro 403, é porque o link expirou ou requer cookies/assinatura específica
-        return false;
-      }
-    } catch (e) {
-      debugPrint("FLUX Download Error: $e");
-      return false;
-    }
-  }
+Future<bool> downloadTrack(Map<String, String> track) async {
+  if (kIsWeb) return false;
+  await enqueueDownload(track); // Apenas coloca na fila
+  return true; 
+}
 
   Future<void> downloadEntirePlaylist(String playlistName) async {
     if (kIsWeb) return;

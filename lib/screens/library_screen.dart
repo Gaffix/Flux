@@ -11,6 +11,32 @@ import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
 
+  // Função auxiliar para mostrar o diálogo de nome
+  Future<String?> _showNameDialog(BuildContext context, String defaultName) async {
+    final controller = TextEditingController(text: defaultName);
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Nome da Playlist"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "Digite o nome aqui..."),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancelar"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text("Importar"),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _importJsonPlaylist(
     BuildContext context,
     FluxProvider provider,
@@ -34,21 +60,44 @@ class LibraryScreen extends StatelessWidget {
           jsonString = await File(path).readAsString();
         }
 
-        final Map<String, dynamic> data = json.decode(jsonString);
-        data.forEach((key, value) {
-          if (value is List) {
-            List<Map<String, String>> tracks =
-                (value).map((t) => Map<String, String>.from(t)).toList();
-            provider.playlists[key] = tracks;
+        final dynamic decodedData = json.decode(jsonString);
+
+        if (decodedData is Map<String, dynamic>) {
+          // Se o JSON já tem chaves, importa todas
+          decodedData.forEach((key, value) {
+            if (value is List) {
+              List<Map<String, String>> tracks = value.map((t) {
+                final item = t as Map;
+                return item.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ""));
+              }).toList();
+              provider.playlists[key] = tracks;
+            }
+          });
+        } else if (decodedData is List) {
+          // Se for uma lista, pergunta o nome ao usuário
+          final fileName = result.files.single.name.replaceAll('.json', '');
+          final String? playlistName = await _showNameDialog(context, fileName);
+
+          // Se o usuário não cancelou o diálogo
+          if (playlistName != null && playlistName.isNotEmpty) {
+            List<Map<String, String>> tracks = decodedData.map((t) {
+              final item = t as Map;
+              return item.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ""));
+            }).toList();
+
+            provider.playlists[playlistName] = tracks;
+          } else {
+            return; // Usuário cancelou
           }
-        });
+        }
+
         provider.saveToPrefs();
         provider.notifyListeners();
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Erro: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erro: $e")),
+      );
     }
   }
 
