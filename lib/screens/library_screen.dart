@@ -11,6 +11,37 @@ import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
 
+  Future<void> _renamePlaylist(BuildContext context, String oldName, FluxProvider provider) async {
+  final controller = TextEditingController(text: oldName);
+  final newName = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF242424),
+      title: const Text("Renomear Playlist"),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: "Novo nome..."),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar")),
+        TextButton(
+          onPressed: () => Navigator.pop(context, controller.text),
+          child: const Text("Salvar", style: TextStyle(color: Color(0xFF14B8A6))),
+        ),
+      ],
+    ),
+  );
+
+  if (newName != null && newName.isNotEmpty && newName != oldName) {
+    // Adiciona as músicas ao novo nome e remove o antigo
+    provider.playlists[newName] = List.from(provider.playlists[oldName]!);
+    provider.deletePlaylist(oldName); 
+    provider.saveToPrefs();
+    provider.notifyListeners();
+  }
+}
+
   // Função auxiliar para mostrar o diálogo de nome
   Future<String?> _showNameDialog(BuildContext context, String defaultName) async {
     final controller = TextEditingController(text: defaultName);
@@ -145,15 +176,13 @@ class LibraryScreen extends StatelessWidget {
                 child: SizedBox(
                   width: 50,
                   height: 50,
-                  child:
-                      (imageUrl != null && imageUrl.isNotEmpty)
-                          ? Image.network(
-                            imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder:
-                                (c, e, s) => const _LibraryPlaceholder(),
-                          )
-                          : const _LibraryPlaceholder(),
+                  child: (imageUrl != null && imageUrl.isNotEmpty)
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => const _LibraryPlaceholder(),
+                        )
+                      : const _LibraryPlaceholder(),
                 ),
               ),
               title: Text(
@@ -161,15 +190,48 @@ class LibraryScreen extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               subtitle: Text("${tracks.length} músicas"),
+              // --- INÍCIO DA MUDANÇA: BOTÃO DE TRÊS PONTOS ---
+              trailing: PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                color: const Color(0xFF242424),
+                onSelected: (value) {
+                  if (value == 'rename') {
+                    _renamePlaylist(context, name, provider);
+                  } else if (value == 'delete') {
+                    provider.deletePlaylist(name);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Playlist '$name' apagada")),
+                    );
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'rename',
+                    child: ListTile(
+                      leading: Icon(Icons.edit, size: 20),
+                      title: Text('Renomear'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(Icons.delete, color: Colors.redAccent, size: 20),
+                      title: Text('Apagar', style: TextStyle(color: Colors.redAccent)),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+              // --- FIM DA MUDANÇA ---
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder:
-                        (context) => PlaylistDetailScreen(
-                          playlistName: name,
-                          tracks: tracks,
-                        ),
+                    builder: (context) => PlaylistDetailScreen(
+                      playlistName: name,
+                      tracks: tracks,
+                    ),
                   ),
                 );
               },
