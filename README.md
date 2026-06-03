@@ -40,7 +40,7 @@ O app será compilado e iniciado diretamente no seu dispositivo.
 Basta rodar o comando abaixo em qualquer terminal Linux ou WSL, substituindo `SEU_TOKEN_REAL_DO_NGROK` com a credencial do seu painel do Ngrok:
 
 ```bash
-docker run -it --rm -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_REAL_DO_NGROK gaffix/flux-server:latest
+docker run -it --rm --pull=always -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_REAL_DO_NGROK gaffix/flux-server:latest
 
 ```
 
