@@ -40,8 +40,14 @@ O app será compilado e iniciado diretamente no seu dispositivo.
 Basta rodar o comando abaixo em qualquer terminal Linux ou WSL, substituindo `SEU_TOKEN_REAL_DO_NGROK` com a credencial do seu painel do Ngrok:
 
 ```bash
-docker run -it --rm --pull=always -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_REAL_DO_NGROK gaffix/flux-server:latest
+docker run -it --rm --pull=always -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_NGROK gaffix/flux-server:latest
 
+```
+
+Desse modo, toda vez que o comando ser executado, será gerado um link aleatório. Para utililzar um link permanente, ele deve ser criado em "https://dashboard.ngrok.com/domains", clicando na opção "New Domain". O comando deve então ser executado utilizando um novo argumento:
+
+```bash
+docker run -it --rm --pull=always -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_NGROK -e NGROK_DOMAIN=SEU_DOMINIO_NGROK gaffix/flux-server:latest
 ```
 
 ---
