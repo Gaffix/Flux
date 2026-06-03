@@ -1,124 +1,77 @@
+```markdown
 # 🚀 Flux — Guia de Configuração e Execução
-
-Este guia explica, passo a passo, como configurar o ambiente necessário para rodar o projeto **Flux**, incluindo o app Flutter, o servidor em Docker e o túnel externo via Ngrok.
 
 ---
 
 ## 📋 Pré-requisitos
 
-Antes de começar, instale:
+Antes de começar, certifique-se de ter instalado:
 
 - [Flutter SDK](https://flutter.dev/docs/get-started/install)
 - [Git](https://git-scm.com/)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- Conta no [Ngrok](https://ngrok.com/)
+- [Docker](https://www.docker.com/) (Docker Desktop no Windows/Mac ou Docker Engine no Linux)
+- Uma conta no [Ngrok](https://ngrok.com/) para obter seu token de autenticação.
 
 ---
 
-## 🌐 1. Configurando o Ngrok
+## 📱 1. Rodando o App Flutter no Celular
 
-1. Acesse o site do Ngrok e faça login.
-2. Baixe o executável do Ngrok.
-3. No painel do Ngrok, copie sua **authtoken**.
-4. Abra o terminal e execute:
-
+1. Conecte seu celular ao computador via USB com a **Depuração USB** ativada nas opções de desenvolvedor.
+2. Na raiz do projeto, instale as dependências:
    ```bash
-   ngrok config add-authtoken SUA_CHAVE_AQUI
-   ```
+   flutter pub get
 
-5. Teste se está funcionando:
+```
 
-   ```bash
-   ngrok http 9000
-   ```
+3. Execute o aplicativo:
+```bash
+flutter run lib/main.dart
 
-### ❗ Caso o comando não funcione
+```
 
-Se o terminal não reconhecer `ngrok`:
 
-1. Aperte **Windows**
-2. Pesquise por **"variáveis de ambiente"**
-3. Clique em **Editar as variáveis de ambiente do sistema**
-4. Acesse **Variáveis de Ambiente → Path**
-5. Adicione o caminho da pasta onde está o executável do Ngrok
+
+O app será compilado e iniciado diretamente no seu dispositivo.
 
 ---
 
-## 📦 2. Clonando o Projeto
+## 🐳 2. Rodando o Servidor de Forma Automatizada (Qualquer Máquina)
+
+Basta rodar o comando abaixo em qualquer terminal Linux ou WSL, substituindo `SEU_TOKEN_REAL_DO_NGROK` com a credencial do seu painel do Ngrok:
 
 ```bash
-git clone <URL_DO_REPOSITORIO>
-cd flux
-flutter pub get
+docker run -it --rm -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_REAL_DO_NGROK gaffix/flux-server:latest
+
 ```
 
 ---
 
-## 📱 3. Rodando o App Flutter no Celular
+## 🔗 3. Conectando o App ao Servidor
 
-1. Conecte seu celular via USB com depuração ativada
-2. Execute:
+Assim que o comando do Docker terminar de iniciar, uma mensagem aparecerá no seu terminal assim:
 
-   ```bash
-   flutter run lib/main.dart
-   ```
+```text
+============================================================
+🚀 LINK PARA COLOCAR NO APLICATIVO FLUX:
+👉 [https://abcd-123-45-67.ngrok-free.app](https://abcd-123-45-67.ngrok-free.app) 👈
+============================================================
 
-O app será iniciado no dispositivo.
+```
 
----
+1. **Copie** a URL gerada (com o `https://`).
+2. Abra o aplicativo **Flux** no seu celular.
+3. Toque no ícone de **Configurações** (engrenagem).
+4. **Cole** a nova URL no campo do servidor e salve.
 
-## 🐳 4. Configurando e Rodando o Servidor com Docker
-
-1. Abra o **Docker Desktop**
-
-2. No terminal, vá até a pasta `server` do projeto:
-
-   ```bash
-   cd server
-   ```
-
-3. Construa o ambiente Docker:
-
-   ```bash
-   docker build -t flux .
-   ```
-
-4. Inicie o container:
-
-   ```bash
-   docker run -p 9000:9000 flux
-   ```
-
-O servidor estará rodando localmente na porta **9000**.
+Pronto! Seu aplicativo está conectado ao backend e pronto para buscar e reproduzir as músicas direto do YouTube.
 
 ---
 
-## 🔗 5. Expondo o Servidor com Ngrok
+## 🛑 Como Desligar o Servidor
 
-Em **um novo terminal**, execute:
+Para encerrar o servidor e fechar o túnel do Ngrok com segurança, basta voltar ao terminal onde o Docker está rodando e pressionar:
 
 ```bash
-ngrok http 9000
-```
-
-O Ngrok irá gerar um endereço público na seção:
+Ctrl + C
 
 ```
-Forwarding
-```
-
-Copie esse endereço.
-
----
-
-## ⚙️ 6. Conectando o App ao Servidor
-
-1. Abra o aplicativo no celular
-2. Clique no ícone de **engrenagem**
-3. Cole o endereço gerado pelo Ngrok (Forwarding) no campo indicado
-
----
-
-## ✅ Pronto!
-
-Agora o aplicativo está conectado ao servidor local através do túnel do Ngrok e totalmente funcional.
