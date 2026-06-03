@@ -1,6 +1,4 @@
-```markdown
 # 🚀 Flux — Guia de Configuração e Execução
-```
 
 ---
 
@@ -19,7 +17,8 @@ Antes de começar, certifique-se de ter instalado:
 
 1. Conecte seu celular ao computador via USB com a **Depuração USB** ativada nas opções de desenvolvedor.
 2. Na raiz do projeto, instale as dependências:
-   ```bash
+
+```bash
    flutter pub get
 
 ```
