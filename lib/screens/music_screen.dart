@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../providers/flux_provider.dart';
 import '../screens/lyrics_view.dart';
 import '../main.dart';
@@ -7,7 +8,6 @@ import '../main.dart';
 class MusicScreen extends StatelessWidget {
   const MusicScreen({super.key});
 
-  // Função auxiliar para formatar a duração (ex: 03:45)
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
     String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
@@ -23,7 +23,7 @@ class MusicScreen extends StatelessWidget {
     final provider = Provider.of<FluxProvider>(context);
     final track = provider.currentTrack;
 
-    // Se por algum motivo não houver música tocando, exibe uma tela vazia
+    // Se por algum motivo não houver música tocando
     if (track == null) {
       return Scaffold(
         backgroundColor: FluxApp.backgroundColor,
@@ -35,249 +35,295 @@ class MusicScreen extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
           ),
         ),
-        body: const Center(child: Text("Nenhuma música tocando no momento.")),
+        body: const Center(
+          child: Text("Nenhuma música tocando no momento."),
+        ),
       );
     }
 
     return Scaffold(
       backgroundColor: FluxApp.backgroundColor,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // --- TOP BAR (TÍTULO E BOTÃO FECHAR) ---
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // --- NOVO BOTÃO DE LETRAS ---
-                  IconButton(
-                    icon: const Icon(Icons.lyrics, color: FluxApp.accentColor, size: 24),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const LyricsView()),
-                      );
-                    },
-                  ),
-                  const Text(
-                    "TOCANDO AGORA",
-                    style: TextStyle(
-                      color: FluxApp.secondaryTextColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-
-              // --- CAPA DO ÁLBUM ---
-              Expanded(
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: 1.0, // Mantém a imagem quadrada
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child:
-                            (track['album_image_url'] != null &&
-                                    track['album_image_url']!.isNotEmpty)
-                                ? Image.network(
-                                  track['album_image_url']!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder:
-                                      (context, error, stackTrace) =>
-                                          const _FallbackImage(),
-                                )
-                                : const _FallbackImage(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 40),
-
-              // --- INFORMAÇÕES DA MÚSICA ---
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              FluxApp.accentColor.withOpacity(0.18),
+              FluxApp.backgroundColor.withOpacity(0.95),
+              FluxApp.backgroundColor,
+            ],
+            stops: const [0.0, 0.45, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // --- TOP BAR ---
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      track['track_name'] ?? 'Música Desconhecida',
-                      style: const TextStyle(
-                        color: FluxApp.primaryTextColor,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    IconButton(
+                      icon: const Icon(Icons.lyrics,
+                          color: FluxApp.accentColor, size: 24),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const LyricsView()),
+                        );
+                      },
                     ),
-                    const SizedBox(height: 4),
                     Text(
-                      track['artist'] ?? 'Artista Desconhecido',
-                      style: const TextStyle(
+                      "TOCANDO AGORA",
+                      style: GoogleFonts.inter(
                         color: FluxApp.secondaryTextColor,
-                        fontSize: 18,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white, size: 30),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
-              // --- BARRA DE PROGRESSO (SLIDER) ---
-              StreamBuilder<Duration>(
-                stream: provider.player.positionStream,
-                builder: (context, positionSnapshot) {
-                  final position = positionSnapshot.data ?? Duration.zero;
+                // --- CAPA DO ÁLBUM ---
+                Expanded(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 1.0,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: FluxApp.accentColor.withOpacity(0.15),
+                              blurRadius: 40,
+                              offset: const Offset(0, 16),
+                              spreadRadius: 4,
+                            ),
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.5),
+                              blurRadius: 24,
+                              offset: const Offset(0, 12),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: (track['album_image_url'] != null &&
+                                  track['album_image_url']!.isNotEmpty)
+                              ? Image.network(
+                                  track['album_image_url']!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const _FallbackImage(),
+                                )
+                              : const _FallbackImage(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 36),
 
-                  return StreamBuilder<Duration?>(
-                    stream: provider.player.durationStream,
-                    builder: (context, durationSnapshot) {
-                      final duration = durationSnapshot.data ?? Duration.zero;
+                // --- INFORMAÇÕES DA MÚSICA ---
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        track['track_name'] ?? 'Música Desconhecida',
+                        style: GoogleFonts.inter(
+                          color: FluxApp.primaryTextColor,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        track['artist'] ?? 'Artista Desconhecido',
+                        style: GoogleFonts.inter(
+                          color: FluxApp.secondaryTextColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
 
-                      // Garante que o slider não quebre se a duração for nula ou menor que a posição
-                      final double maxDuration =
-                          duration.inMilliseconds.toDouble() > 0
-                              ? duration.inMilliseconds.toDouble()
-                              : 1.0;
-                      final double currentPosition = position.inMilliseconds
-                          .toDouble()
-                          .clamp(0.0, maxDuration);
+                // --- BARRA DE PROGRESSO (SLIDER) ---
+                StreamBuilder<Duration>(
+                  stream: provider.player.positionStream,
+                  builder: (context, positionSnapshot) {
+                    final position = positionSnapshot.data ?? Duration.zero;
 
-                      return Column(
-                        children: [
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              activeTrackColor: FluxApp.accentColor,
-                              inactiveTrackColor: FluxApp.progressTrackColor,
-                              thumbColor: FluxApp.accentColor,
-                              trackHeight: 4.0,
-                              thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 6.0,
+                    return StreamBuilder<Duration?>(
+                      stream: provider.player.durationStream,
+                      builder: (context, durationSnapshot) {
+                        final duration =
+                            durationSnapshot.data ?? Duration.zero;
+                        final double maxDuration =
+                            duration.inMilliseconds.toDouble() > 0
+                                ? duration.inMilliseconds.toDouble()
+                                : 1.0;
+                        final double currentPosition = position
+                            .inMilliseconds
+                            .toDouble()
+                            .clamp(0.0, maxDuration);
+
+                        return Column(
+                          children: [
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: FluxApp.accentColor,
+                                inactiveTrackColor:
+                                    Colors.white.withOpacity(0.1),
+                                thumbColor: FluxApp.accentColor,
+                                trackHeight: 4.0,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 7.0,
+                                ),
+                                overlayShape:
+                                    const RoundSliderOverlayShape(
+                                  overlayRadius: 14.0,
+                                ),
+                                overlayColor:
+                                    FluxApp.accentColor.withOpacity(0.15),
                               ),
-                              overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 14.0,
+                              child: Slider(
+                                min: 0.0,
+                                max: maxDuration,
+                                value: currentPosition,
+                                onChanged: (value) {
+                                  provider.player.seek(
+                                    Duration(
+                                        milliseconds: value.round()),
+                                  );
+                                },
                               ),
                             ),
-                            child: Slider(
-                              min: 0.0,
-                              max: maxDuration,
-                              value: currentPosition,
-                              onChanged: (value) {
-                                provider.player.seek(
-                                  Duration(milliseconds: value.round()),
-                                );
-                              },
-                            ),
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _formatDuration(position),
-                                style: const TextStyle(
-                                  color: FluxApp.secondaryTextColor,
-                                  fontSize: 12,
-                                ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    _formatDuration(position),
+                                    style: GoogleFonts.inter(
+                                      color: FluxApp.secondaryTextColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatDuration(duration),
+                                    style: GoogleFonts.inter(
+                                      color: FluxApp.secondaryTextColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                _formatDuration(duration),
-                                style: const TextStyle(
-                                  color: FluxApp.secondaryTextColor,
-                                  fontSize: 12,
-                                ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+
+                // --- CONTROLES DE MÍDIA ---
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Botão Voltar
+                    IconButton(
+                      iconSize: 44,
+                      icon: const Icon(
+                        Icons.skip_previous_rounded,
+                        color: FluxApp.primaryTextColor,
+                      ),
+                      onPressed: () {
+                        provider.skipPrevious();
+                      },
+                    ),
+
+                    // Botão Play/Pause
+                    StreamBuilder<bool>(
+                      stream: provider.player.playingStream,
+                      builder: (context, snapshot) {
+                        final isPlaying = snapshot.data ?? false;
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: FluxApp.accentColor,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    FluxApp.accentColor.withOpacity(0.35),
+                                blurRadius: 20,
+                                offset: const Offset(0, 6),
                               ),
                             ],
                           ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // --- CONTROLES DE MÍDIA ---
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // Botão Voltar
-                  IconButton(
-                    iconSize: 48,
-                    icon: const Icon(
-                      Icons.skip_previous,
-                      color: FluxApp.primaryTextColor,
-                    ),
-                    onPressed: () {
-                      provider.skipPrevious();
-                    },
-                  ),
-
-                  // Botão Play/Pause (com tamanho maior)
-                  StreamBuilder<bool>(
-                    stream: provider.player.playingStream,
-                    builder: (context, snapshot) {
-                      final isPlaying = snapshot.data ?? false;
-                      return Container(
-                        decoration: const BoxDecoration(
-                          color: FluxApp.accentColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: IconButton(
-                          iconSize: 64,
-                          padding: const EdgeInsets.all(16),
-                          icon: Icon(
-                            isPlaying ? Icons.pause : Icons.play_arrow,
-                            color: Colors.white,
+                          child: IconButton(
+                            iconSize: 56,
+                            padding: const EdgeInsets.all(14),
+                            icon: Icon(
+                              isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Colors.white,
+                            ),
+                            onPressed: () {
+                              if (isPlaying) {
+                                provider.player.pause();
+                              } else {
+                                provider.player.play();
+                              }
+                            },
                           ),
-                          onPressed: () {
-                            if (isPlaying) {
-                              provider.player.pause();
-                            } else {
-                              provider.player.play();
-                            }
-                          },
-                        ),
-                      );
-                    },
-                  ),
-
-                  // Botão Avançar
-                  IconButton(
-                    iconSize: 48,
-                    icon: const Icon(
-                      Icons.skip_next,
-                      color: FluxApp.primaryTextColor,
+                        );
+                      },
                     ),
-                    onPressed: () {
-                      provider.skipNext();
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-            ],
+
+                    // Botão Avançar
+                    IconButton(
+                      iconSize: 44,
+                      icon: const Icon(
+                        Icons.skip_next_rounded,
+                        color: FluxApp.primaryTextColor,
+                      ),
+                      onPressed: () {
+                        provider.skipNext();
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+              ],
+            ),
           ),
         ),
       ),
@@ -292,11 +338,20 @@ class _FallbackImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: FluxApp.cardColor,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FluxApp.cardColor,
+            FluxApp.accentColor.withOpacity(0.2),
+          ],
+        ),
+      ),
       child: const Center(
         child: Icon(
-          Icons.music_note,
-          size: 100,
+          Icons.music_note_rounded,
+          size: 80,
           color: FluxApp.secondaryTextColor,
         ),
       ),

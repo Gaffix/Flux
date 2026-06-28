@@ -13,23 +13,28 @@ class FluxProvider extends ChangeNotifier {
   final AudioPlayer player = AudioPlayer();
   String _baseUrl = "";
   String get baseUrl => _baseUrl;
-  // --- NOVAS VARIÁVEIS DE ESTADO (Inspiradas no DownloadManager) ---
+
+  // --- DOWNLOAD QUEUE ---
   final Queue<Map<String, String>> _downloadQueue = Queue();
   final Set<String> _activeDownloads = {};
   final Map<String, ValueNotifier<double>> _progressNotifiers = {};
   final int _maxConcurrent = 3;
-
-  // Mapa para rastrear o status (Útil para a UI)
-  // Status: "NONE", "QUEUED", "DOWNLOADING", "DOWNLOADED"
   final Map<String, String> _trackStatuses = {};
 
-  // Getters para a UI
   ValueNotifier<double>? getProgress(String videoId) => _progressNotifiers[videoId];
   String getTrackStatus(String videoId) => _trackStatuses[videoId] ?? "NONE";
 
+  // --- CORE STATE ---
   Map<String, String>? currentTrack;
   List<Map<String, String>> currentQueue = [];
   Map<String, List<Map<String, String>>> playlists = {"Favoritas": []};
+
+  // --- RECENTLY PLAYED ---
+  List<Map<String, String>> _recentlyPlayed = [];
+  List<Map<String, String>> get recentlyPlayed => List.unmodifiable(_recentlyPlayed);
+
+  // --- PER-PLAYLIST SHUFFLE MODE ---
+  Map<String, bool> _playlistShuffleMode = {};
 
   bool _playerListenerRegistered = false;
 
@@ -49,6 +54,121 @@ class FluxProvider extends ChangeNotifier {
     });
   }
 
+  // --- RECENTLY PLAYED ---
+  void _addToRecentlyPlayed(Map<String, String> track) {
+    _recentlyPlayed.removeWhere(
+      (t) =>
+          t['track_name'] == track['track_name'] &&
+          t['artist'] == track['artist'],
+    );
+    _recentlyPlayed.insert(0, Map<String, String>.from(track));
+    if (_recentlyPlayed.length > 20) {
+      _recentlyPlayed = _recentlyPlayed.sublist(0, 20);
+    }
+    _saveRecentlyPlayed();
+    notifyListeners();
+  }
+
+  Future<void> _saveRecentlyPlayed() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('flux_recently_played', json.encode(_recentlyPlayed));
+  }
+
+  Future<void> _loadRecentlyPlayed() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? savedData = prefs.getString('flux_recently_played');
+    if (savedData != null) {
+      try {
+        final List<dynamic> decoded = json.decode(savedData);
+        _recentlyPlayed =
+            decoded.map((item) => Map<String, String>.from(item)).toList();
+      } catch (e) {
+        debugPrint("Erro ao carregar recentes: $e");
+      }
+    }
+  }
+
+  // --- SHUFFLE MODE ---
+  bool isPlaylistShuffled(String name) => _playlistShuffleMode[name] ?? true;
+
+  void togglePlaylistShuffle(String name) {
+    _playlistShuffleMode[name] = !isPlaylistShuffled(name);
+    _saveShuffleMode();
+    notifyListeners();
+  }
+
+  void setPlaylistShuffle(String name, bool shuffle) {
+    _playlistShuffleMode[name] = shuffle;
+    _saveShuffleMode();
+    notifyListeners();
+  }
+
+  Future<void> _saveShuffleMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        'flux_shuffle_mode', json.encode(_playlistShuffleMode));
+  }
+
+  Future<void> _loadShuffleMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? savedData = prefs.getString('flux_shuffle_mode');
+    if (savedData != null) {
+      try {
+        final Map<String, dynamic> decoded = json.decode(savedData);
+        _playlistShuffleMode =
+            decoded.map((k, v) => MapEntry(k, v as bool));
+      } catch (e) {
+        debugPrint("Erro ao carregar shuffle mode: $e");
+      }
+    }
+  }
+
+  // --- ARTIST HELPERS ---
+  /// Returns all unique artists across all playlists, sorted by track count desc
+  List<MapEntry<String, int>> getAllArtistsSorted() {
+    Map<String, int> artistCount = {};
+    for (var list in playlists.values) {
+      for (var track in list) {
+        String artist = track['artist'] ?? 'Desconhecido';
+        artistCount[artist] = (artistCount[artist] ?? 0) + 1;
+      }
+    }
+    var sorted = artistCount.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted;
+  }
+
+  /// Returns all unique tracks by a given artist across all playlists
+  List<Map<String, String>> getTracksForArtist(String artist) {
+    final Set<String> seen = {};
+    final List<Map<String, String>> result = [];
+    for (var list in playlists.values) {
+      for (var track in list) {
+        if (track['artist'] == artist) {
+          final key = '${track['track_name']}||${track['artist']}';
+          if (!seen.contains(key)) {
+            seen.add(key);
+            result.add(Map<String, String>.from(track));
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  /// Returns the album image URL for the artist's most common track
+  String? getArtistImageUrl(String artist) {
+    for (var list in playlists.values) {
+      for (var track in list) {
+        if (track['artist'] == artist) {
+          final url = track['album_image_url'];
+          if (url != null && url.isNotEmpty) return url;
+        }
+      }
+    }
+    return null;
+  }
+
   // --- PERSISTENCE ---
   Future<void> saveToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
@@ -65,7 +185,8 @@ class FluxProvider extends ChangeNotifier {
       return;
     }
 
-    if (_activeDownloads.contains(videoId) || _downloadQueue.any((t) => t['video_id'] == videoId)) {
+    if (_activeDownloads.contains(videoId) ||
+        _downloadQueue.any((t) => t['video_id'] == videoId)) {
       return; // Já está na fila ou baixando
     }
 
@@ -76,7 +197,9 @@ class FluxProvider extends ChangeNotifier {
   }
 
   Future<void> _processNextDownload() async {
-    if (_activeDownloads.length >= _maxConcurrent || _downloadQueue.isEmpty) return;
+    if (_activeDownloads.length >= _maxConcurrent || _downloadQueue.isEmpty) {
+      return;
+    }
 
     final track = _downloadQueue.removeFirst();
     final videoId = track['video_id']!;
@@ -101,7 +224,8 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _executeDownload(Map<String, String> track, String videoId) async {
+  Future<void> _executeDownload(
+      Map<String, String> track, String videoId) async {
     final savePath = await getDownloadedAudioPath(track);
     final file = File(savePath);
 
@@ -110,7 +234,7 @@ class FluxProvider extends ChangeNotifier {
 
     final request = http.Request('GET', Uri.parse(streamUrl));
     request.headers['ngrok-skip-browser-warning'] = 'true';
-    
+
     final response = await http.Client().send(request);
     final total = response.contentLength ?? 0;
     int received = 0;
@@ -176,11 +300,13 @@ class FluxProvider extends ChangeNotifier {
                 .toList(),
           );
         });
-        notifyListeners();
       } catch (e) {
         debugPrint("Erro ao carregar dados: $e");
       }
     }
+    await _loadRecentlyPlayed();
+    await _loadShuffleMode();
+    notifyListeners();
   }
 
   // --- FILE SYSTEM PATHS (native only) ---
@@ -254,7 +380,9 @@ class FluxProvider extends ChangeNotifier {
   void deletePlaylist(String playlistName) {
     if (playlists.containsKey(playlistName)) {
       playlists.remove(playlistName);
+      _playlistShuffleMode.remove(playlistName);
       saveToPrefs();
+      _saveShuffleMode();
       notifyListeners();
     }
   }
@@ -281,11 +409,11 @@ class FluxProvider extends ChangeNotifier {
   }
 
   // --- DOWNLOAD LOGIC (native only) ---
-Future<bool> downloadTrack(Map<String, String> track) async {
-  if (kIsWeb) return false;
-  await enqueueDownload(track); // Apenas coloca na fila
-  return true; 
-}
+  Future<bool> downloadTrack(Map<String, String> track) async {
+    if (kIsWeb) return false;
+    await enqueueDownload(track); // Apenas coloca na fila
+    return true;
+  }
 
   Future<void> downloadEntirePlaylist(String playlistName) async {
     if (kIsWeb) return;
@@ -366,6 +494,7 @@ Future<bool> downloadTrack(Map<String, String> track) async {
 
     final track = currentQueue[index];
     currentTrack = track;
+    _addToRecentlyPlayed(track);
     notifyListeners();
 
     try {
@@ -404,6 +533,7 @@ Future<bool> downloadTrack(Map<String, String> track) async {
     String? serverStreamUrl,
   ]) async {
     currentTrack = track;
+    _addToRecentlyPlayed(track);
     notifyListeners();
 
     try {

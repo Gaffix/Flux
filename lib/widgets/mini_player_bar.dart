@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../main.dart';
 import '../providers/flux_provider.dart';
 import '../screens/lyrics_view.dart';
-import '../screens/music_screen.dart'; // Importe a tela de música aqui
+import '../screens/music_screen.dart';
 
 class MiniPlayerBar extends StatelessWidget {
   const MiniPlayerBar({super.key});
@@ -18,147 +18,182 @@ class MiniPlayerBar extends StatelessWidget {
     final imageUrl = track['album_image_url'] ?? '';
 
     return GestureDetector(
-      // Implementação do onTap para abrir a MusicScreen
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => const MusicScreen(),
-            fullscreenDialog: true, // Faz a tela deslizar de baixo para cima
+            fullscreenDialog: true,
           ),
         );
       },
-      // Comportamento para garantir que o clique seja reconhecido em toda a barra
       behavior: HitTestBehavior.opaque,
       child: Container(
-        color: const Color(0xFF181818),
-        height: 80, // Slightly increased height to accommodate the slider thumb
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2E),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Interactive Progress/Seek Bar
+            // Progress slider — thin bar at top
             StreamBuilder<Duration>(
               stream: provider.player.positionStream,
               builder: (context, snapshot) {
                 final position = snapshot.data ?? Duration.zero;
                 final total = provider.player.duration ?? Duration.zero;
+                final maxVal = total.inMilliseconds.toDouble() > 0
+                    ? total.inMilliseconds.toDouble()
+                    : 1.0;
 
                 return SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    trackHeight: 2,
-                    // Customizing the thumb to be small so it doesn't break the "bar" look
+                    trackHeight: 2.5,
                     thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 4.0,
+                      enabledThumbRadius: 0,
                     ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 10.0,
-                    ),
+                    overlayShape: SliderComponentShape.noOverlay,
                     activeTrackColor: FluxApp.accentColor,
-                    inactiveTrackColor: FluxApp.progressTrackColor,
-                    thumbColor: FluxApp.accentColor,
+                    inactiveTrackColor: Colors.white.withOpacity(0.08),
+                    thumbColor: Colors.transparent,
                   ),
                   child: SizedBox(
-                    height: 10, // Limits the vertical space of the slider
+                    height: 3,
                     child: Slider(
                       min: 0.0,
-                      // Ensure max is at least 1.0 to avoid errors if duration is null
-                      max:
-                          total.inMilliseconds.toDouble() > 0
-                              ? total.inMilliseconds.toDouble()
-                              : 1.0,
-                      value: position.inMilliseconds.toDouble().clamp(
-                        0.0,
-                        total.inMilliseconds.toDouble() > 0
-                            ? total.inMilliseconds.toDouble()
-                            : 1.0,
-                      ),
+                      max: maxVal,
+                      value: position.inMilliseconds
+                          .toDouble()
+                          .clamp(0.0, maxVal),
                       onChanged: (value) {
-                        // Actually control the player position
-                        provider.player.seek(
-                          Duration(milliseconds: value.toInt()),
-                        );
+                        provider.player
+                            .seek(Duration(milliseconds: value.toInt()));
                       },
                     ),
                   ),
                 );
               },
             ),
-            ListTile(
-              dense: true,
-              leading:
-                  imageUrl.isNotEmpty
-                      ? Image.network(
-                        imageUrl,
-                        width: 45,
-                        height: 45,
-                        fit: BoxFit.cover,
-                        errorBuilder:
-                            (context, error, stackTrace) => Container(
-                              width: 45,
-                              height: 45,
-                              color: FluxApp.cardColor,
-                              child: const Icon(
-                                Icons.music_note,
-                                color: FluxApp.accentColor,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 10),
+              child: Row(
+                children: [
+                  // Album art with rounded corners
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: imageUrl.isNotEmpty
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, e, s) => Container(
+                                color: FluxApp.cardColor,
+                                child: const Icon(Icons.music_note,
+                                    color: FluxApp.accentColor, size: 22),
                               ),
+                            )
+                          : Container(
+                              color: FluxApp.cardColor,
+                              child: const Icon(Icons.music_note,
+                                  color: FluxApp.accentColor, size: 22),
                             ),
-                      )
-                      : Container(
-                        width: 45,
-                        height: 45,
-                        color: FluxApp.cardColor,
-                        child: const Icon(
-                          Icons.music_note,
-                          color: FluxApp.accentColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Track info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          track['track_name'] ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-              title: Text(
-                track['track_name'] ?? '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(
-                track['artist'] ?? '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // --- NOVO BOTÃO DE LETRAS NO PLAYER BAR ---
-                    IconButton(
-                      icon: const Icon(Icons.lyrics_outlined, size: 22),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const LyricsView()),
-                        );
-                      },
+                        const SizedBox(height: 2),
+                        Text(
+                          track['artist'] ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white.withOpacity(0.55),
+                          ),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.skip_previous),
-                      onPressed: () => provider.skipPrevious(),
-                    ),
+                  ),
+                  // Controls
+                  IconButton(
+                    icon: const Icon(Icons.lyrics_outlined,
+                        size: 20, color: FluxApp.accentColor),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const LyricsView()),
+                      );
+                    },
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
+                  ),
+                  IconButton(
+                    icon:
+                        const Icon(Icons.skip_previous_rounded, size: 24),
+                    onPressed: () => provider.skipPrevious(),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
+                  ),
                   StreamBuilder<PlayerState>(
                     stream: provider.player.playerStateStream,
                     builder: (context, snapshot) {
                       final playing = snapshot.data?.playing ?? false;
                       return IconButton(
                         icon: Icon(
-                          playing ? Icons.pause : Icons.play_arrow,
+                          playing
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
                           size: 30,
+                          color: FluxApp.accentColor,
                         ),
-                        onPressed:
-                            () =>
-                                playing
-                                    ? provider.player.pause()
-                                    : provider.player.play(),
+                        onPressed: () => playing
+                            ? provider.player.pause()
+                            : provider.player.play(),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                            minWidth: 40, minHeight: 40),
                       );
                     },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.skip_next),
+                    icon: const Icon(Icons.skip_next_rounded, size: 24),
                     onPressed: () => provider.skipNext(),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
                 ],
               ),
