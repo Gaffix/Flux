@@ -29,6 +29,8 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
     return Consumer<FluxProvider>(
       builder: (context, provider, _) {
         final playlists = provider.playlists;
@@ -36,7 +38,7 @@ class HomeScreen extends StatelessWidget {
         final artists = provider.getAllArtistsSorted();
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          padding: EdgeInsets.only(left: 16, right: 16, top: 20, bottom: 100 + bottomPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -49,26 +51,29 @@ class HomeScreen extends StatelessWidget {
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
 
               // ── 2. Suas Playlists ──
               _buildSectionTitle('Suas Playlists'),
               const SizedBox(height: 12),
-              _buildPlaylistGrid(context, playlists),
-              const SizedBox(height: 28),
+              _buildPlaylistGrid(context, provider, playlists),
+
+              // Only add spacing if artists section will also show
+              if (artists.isNotEmpty) const SizedBox(height: 24),
 
               // ── 3. Seus Artistas Favoritos ──
-              _buildSectionTitle('Seus Artistas Favoritos'),
-              const SizedBox(height: 12),
-              _buildArtistRow(context, provider, artists),
-              const SizedBox(height: 28),
+              if (artists.isNotEmpty) ...[
+                _buildSectionTitle('Seus Artistas Favoritos'),
+                const SizedBox(height: 12),
+                _buildArtistRow(context, provider, artists),
+              ],
+
+              const SizedBox(height: 24),
 
               // ── 4. Tocadas Recentemente ──
               _buildSectionTitle('Tocadas Recentemente'),
               const SizedBox(height: 12),
               _buildRecentlyPlayed(context, provider, recentlyPlayed),
-
-              const SizedBox(height: 100),
             ],
           ),
         );
@@ -90,16 +95,16 @@ class HomeScreen extends StatelessWidget {
   // ── Playlists Quick Grid ──
   Widget _buildPlaylistGrid(
     BuildContext context,
+    FluxProvider provider,
     Map<String, List<Map<String, String>>> playlists,
   ) {
     final entries = playlists.entries.toList();
 
-    // Filter out empty playlists, but keep non-empty ones
     final hasContent = entries.any((e) => e.value.isNotEmpty);
 
     if (entries.isEmpty || !hasContent) {
-      return SizedBox(
-        height: 100,
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -134,7 +139,7 @@ class HomeScreen extends StatelessWidget {
       itemBuilder: (context, index) {
         final name = displayEntries[index].key;
         final tracks = displayEntries[index].value;
-        final firstArt = tracks.isNotEmpty ? tracks.first['album_image_url'] : null;
+        final coverUrl = provider.getPlaylistCover(name);
 
         return GestureDetector(
           onTap: () {
@@ -159,9 +164,9 @@ class HomeScreen extends StatelessWidget {
                 SizedBox(
                   width: 55,
                   height: 55,
-                  child: firstArt != null && firstArt.isNotEmpty
+                  child: coverUrl != null && coverUrl.isNotEmpty
                       ? Image.network(
-                          firstArt,
+                          coverUrl,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) =>
                               const _PlaylistPlaceholder(),
@@ -196,25 +201,10 @@ class HomeScreen extends StatelessWidget {
     FluxProvider provider,
     List<MapEntry<String, int>> artists,
   ) {
-    if (artists.isEmpty) {
-      return SizedBox(
-        height: 100,
-        child: Center(
-          child: Text(
-            'Nenhum artista encontrado.',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: FluxApp.secondaryTextColor,
-            ),
-          ),
-        ),
-      );
-    }
-
     final topArtists = artists.take(10).toList();
 
     return SizedBox(
-      height: 140,
+      height: 130,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: topArtists.length,
@@ -239,18 +229,18 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   imageUrl != null && imageUrl.isNotEmpty
                       ? CircleAvatar(
-                          radius: 42,
+                          radius: 40,
                           backgroundImage: NetworkImage(imageUrl),
                         )
                       : CircleAvatar(
-                          radius: 42,
+                          radius: 40,
                           backgroundColor: artistColors[colorIndex],
                           child: Text(
                             artistName.isNotEmpty
                                 ? artistName[0].toUpperCase()
                                 : '?',
                             style: GoogleFonts.inter(
-                              fontSize: 24,
+                              fontSize: 22,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
@@ -368,7 +358,7 @@ class _PlaylistPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: FluxApp.accentColor.withOpacity(0.3),
+      color: FluxApp.accentColor.withValues(alpha: 0.3),
       child: const Icon(Icons.music_note, color: FluxApp.accentColor),
     );
   }

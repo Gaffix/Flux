@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:google_fonts/google_fonts.dart';
+
 import '../main.dart';
 import '../providers/flux_provider.dart';
 import 'playlist_detail_screen.dart';
@@ -48,10 +48,7 @@ class LibraryScreen extends StatelessWidget {
     );
 
     if (newName != null && newName.isNotEmpty && newName != oldName) {
-      provider.playlists[newName] = List.from(provider.playlists[oldName]!);
-      provider.deletePlaylist(oldName);
-      provider.saveToPrefs();
-      provider.notifyListeners();
+      provider.renamePlaylist(oldName, newName);
     }
   }
 
@@ -164,6 +161,7 @@ class LibraryScreen extends StatelessWidget {
         final dynamic decodedData = json.decode(jsonString);
 
         if (decodedData is Map<String, dynamic>) {
+          final Map<String, List<Map<String, String>>> importData = {};
           decodedData.forEach((key, value) {
             if (value is List) {
               List<Map<String, String>> tracks = value.map((t) {
@@ -171,9 +169,10 @@ class LibraryScreen extends StatelessWidget {
                 return item.map(
                     (k, v) => MapEntry(k.toString(), v?.toString() ?? ""));
               }).toList();
-              provider.playlists[key] = tracks;
+              importData[key] = tracks;
             }
           });
+          provider.importPlaylistsData(importData);
         } else if (decodedData is List) {
           final fileName = result.files.single.name.replaceAll('.json', '');
           final String? playlistName =
@@ -186,14 +185,11 @@ class LibraryScreen extends StatelessWidget {
                   (k, v) => MapEntry(k.toString(), v?.toString() ?? ""));
             }).toList();
 
-            provider.playlists[playlistName] = tracks;
+            provider.importPlaylistsData({playlistName: tracks});
           } else {
             return;
           }
         }
-
-        provider.saveToPrefs();
-        provider.notifyListeners();
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -265,8 +261,7 @@ class LibraryScreen extends StatelessWidget {
         else
           ...provider.playlists.keys.map((name) {
             final tracks = provider.playlists[name]!;
-            final String? imageUrl =
-                tracks.isNotEmpty ? tracks[0]['album_image_url'] : null;
+            final String? imageUrl = provider.getPlaylistCover(name);
 
             return ListTile(
               contentPadding:

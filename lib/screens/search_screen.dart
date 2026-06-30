@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../main.dart';
 import '../providers/flux_provider.dart';
 
@@ -158,7 +158,7 @@ class _SearchScreenState extends State<SearchScreen> {
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        json.decode(response.body);
         debugPrint("FLUX: Stream URL received, playing...");
 
         final trackMap = {

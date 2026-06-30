@@ -7,7 +7,7 @@ import '../providers/flux_provider.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
 import 'search_screen.dart';
-import 'music_screen.dart';
+
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -28,7 +28,7 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,
+
       appBar: AppBar(
         title: const Text(
           'FLUX',
@@ -175,7 +175,7 @@ class _MainPageState extends State<MainPage> {
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: FluxApp.accentColor ?? Colors.blue,
+                        color: FluxApp.accentColor,
                         width: 2,
                       ),
                     ),

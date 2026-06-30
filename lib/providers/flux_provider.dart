@@ -36,11 +36,15 @@ class FluxProvider extends ChangeNotifier {
   // --- PER-PLAYLIST SHUFFLE MODE ---
   Map<String, bool> _playlistShuffleMode = {};
 
+  // --- CUSTOM PLAYLIST COVERS ---
+  Map<String, String> _playlistCovers = {};
+
   bool _playerListenerRegistered = false;
 
   FluxProvider() {
     _loadFromPrefs();
     _loadBaseUrl();
+    _loadPlaylistCovers();
     _registerPlayerListener();
   }
 
@@ -119,6 +123,51 @@ class FluxProvider extends ChangeNotifier {
             decoded.map((k, v) => MapEntry(k, v as bool));
       } catch (e) {
         debugPrint("Erro ao carregar shuffle mode: $e");
+      }
+    }
+  }
+
+  // --- PLAYLIST COVERS ---
+  String? getPlaylistCover(String playlistName) {
+    // Custom cover first, then fall back to first track's album art
+    if (_playlistCovers.containsKey(playlistName) && _playlistCovers[playlistName]!.isNotEmpty) {
+      return _playlistCovers[playlistName];
+    }
+    // Fallback: first track's album art
+    final tracks = playlists[playlistName];
+    if (tracks != null && tracks.isNotEmpty) {
+      final url = tracks.first['album_image_url'];
+      if (url != null && url.isNotEmpty) return url;
+    }
+    return null;
+  }
+
+  void setPlaylistCover(String playlistName, String imageUrl) {
+    _playlistCovers[playlistName] = imageUrl;
+    _savePlaylistCovers();
+    notifyListeners();
+  }
+
+  void removePlaylistCover(String playlistName) {
+    _playlistCovers.remove(playlistName);
+    _savePlaylistCovers();
+    notifyListeners();
+  }
+
+  Future<void> _savePlaylistCovers() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('flux_playlist_covers', json.encode(_playlistCovers));
+  }
+
+  Future<void> _loadPlaylistCovers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? savedData = prefs.getString('flux_playlist_covers');
+    if (savedData != null) {
+      try {
+        final Map<String, dynamic> decoded = json.decode(savedData);
+        _playlistCovers = decoded.map((k, v) => MapEntry(k, v.toString()));
+      } catch (e) {
+        debugPrint("Erro ao carregar capas: $e");
       }
     }
   }
@@ -350,6 +399,15 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
+  void importPlaylistsData(Map<String, List<Map<String, String>>> data) {
+    data.forEach((key, value) {
+      playlists[key] = value;
+    });
+    saveToPrefs();
+    notifyListeners();
+  }
+
+
   void addTrackToPlaylist(String playlistName, Map<String, String> track) {
     if (playlists.containsKey(playlistName)) {
       bool exists = playlists[playlistName]!.any(
@@ -381,10 +439,32 @@ class FluxProvider extends ChangeNotifier {
     if (playlists.containsKey(playlistName)) {
       playlists.remove(playlistName);
       _playlistShuffleMode.remove(playlistName);
+      _playlistCovers.remove(playlistName);
+      _savePlaylistCovers();
       saveToPrefs();
       _saveShuffleMode();
       notifyListeners();
     }
+  }
+
+  void renamePlaylist(String oldName, String newName) {
+    if (newName.isEmpty || playlists.containsKey(newName) || !playlists.containsKey(oldName)) return;
+    playlists[newName] = List.from(playlists[oldName]!);
+    playlists.remove(oldName);
+    // Transfer shuffle mode
+    if (_playlistShuffleMode.containsKey(oldName)) {
+      _playlistShuffleMode[newName] = _playlistShuffleMode[oldName]!;
+      _playlistShuffleMode.remove(oldName);
+      _saveShuffleMode();
+    }
+    // Transfer cover
+    if (_playlistCovers.containsKey(oldName)) {
+      _playlistCovers[newName] = _playlistCovers[oldName]!;
+      _playlistCovers.remove(oldName);
+      _savePlaylistCovers();
+    }
+    saveToPrefs();
+    notifyListeners();
   }
 
   void addToPlaylist(String playlistName, Video video) {
