@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your server code
 COPY . .
 
-# Expose the port your Flask app runs on (e.g., 5000)
-EXPOSE 5000
+# Expose the port your Flask app runs on
+EXPOSE 9000
 
-# Run the server
-CMD ["python", "server.py"]
+# Run the server using Gunicorn for better performance
+CMD ["gunicorn", "--bind", "0.0.0.0:9000", "--workers", "2", "--threads", "4", "server:app"]

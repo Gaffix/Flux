@@ -4,9 +4,30 @@ import yt_dlp
 import os
 import sys
 from pyngrok import ngrok
+from cachetools import cached, TTLCache
 
 app = Flask(__name__)
 CORS(app)
+
+# Cria um cache na memória para guardar os URLs extraídos.
+# Guarda até 1000 músicas. Expira a cada 4 horas (14400 segundos) pois os links do YouTube expiram.
+url_cache = TTLCache(maxsize=1000, ttl=14400)
+
+@cached(url_cache)
+def extract_youtube_audio_info(video_id):
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'no_warnings': True,
+        'force_generic_extractor': False,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(video_url, download=False)
+        return {
+            "title": info.get('title'),
+            "url": info['url']
+        }
 
 @app.route('/get_audio', methods=['GET'])
 def get_audio():
@@ -14,23 +35,10 @@ def get_audio():
     if not video_id:
         return jsonify({"error": "No ID provided"}), 400
 
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-        'force_generic_extractor': False,
-    }
-
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            audio_url = info['url']
-            return jsonify({
-                "title": info.get('title'),
-                "url": audio_url
-            })
+        # Tenta pegar do cache primeiro, ou busca no yt-dlp
+        data = extract_youtube_audio_info(video_id)
+        return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
