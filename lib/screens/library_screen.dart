@@ -272,12 +272,7 @@ class LibraryScreen extends StatelessWidget {
                   width: 52,
                   height: 52,
                   child: (imageUrl != null && imageUrl.isNotEmpty)
-                      ? Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (c, e, s) =>
-                              const _LibraryPlaceholder(),
-                        )
+                      ? _buildCoverImage(imageUrl)
                       : const _LibraryPlaceholder(),
                 ),
               ),
@@ -348,6 +343,20 @@ class LibraryScreen extends StatelessWidget {
             );
           }),
       ],
+    );
+  }
+  Widget _buildCoverImage(String url) {
+    if (url.startsWith('/') || url.startsWith('C:') || url.startsWith('D:') || !url.startsWith('http')) {
+      return Image.file(
+        File(url),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const _LibraryPlaceholder(),
+      );
+    }
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const _LibraryPlaceholder(),
     );
   }
 }

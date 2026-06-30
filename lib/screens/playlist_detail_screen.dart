@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../providers/flux_provider.dart';
 import '../widgets/mini_player_bar.dart';
 import '../main.dart';
@@ -59,67 +61,134 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E2E),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Alterar Capa'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                hintText: 'URL da imagem...',
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: 'URL da imagem...',
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.05),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            // Option to pick from existing track covers
-            if (widget.tracks.isNotEmpty)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  icon: const Icon(Icons.photo_library_outlined, size: 18),
-                  label: const Text('Escolher de uma música'),
-                  style: TextButton.styleFrom(foregroundColor: FluxApp.accentColor),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showPickCoverFromTracks(context, provider);
-                  },
+              const SizedBox(height: 16),
+              // Pick from phone storage
+              if (!kIsWeb)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.folder_open_outlined, size: 18),
+                    label: const Text('Escolher do celular'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: FluxApp.accentColor,
+                      side: BorderSide(color: FluxApp.accentColor.withValues(alpha: 0.4)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(dialogContext);
+                      await _pickCoverFromStorage(context, provider);
+                    },
+                  ),
                 ),
-              ),
-          ],
+              if (!kIsWeb) const SizedBox(height: 8),
+              // Pick from existing track covers
+              if (widget.tracks.isNotEmpty)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.photo_library_outlined, size: 18),
+                    label: const Text('Escolher de uma música'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: FluxApp.accentColor,
+                      side: BorderSide(color: FluxApp.accentColor.withValues(alpha: 0.4)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _showPickCoverFromTracks(context, provider);
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         actions: [
-          TextButton(
-            onPressed: () {
-              // Reset to default
-              provider.removePlaylistCover(widget.playlistName);
-              Navigator.pop(context);
-            },
-            child: const Text('Padrão', style: TextStyle(color: FluxApp.secondaryTextColor)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                provider.setPlaylistCover(widget.playlistName, controller.text.trim());
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Salvar', style: TextStyle(color: FluxApp.accentColor)),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () {
+                  provider.removePlaylistCover(widget.playlistName);
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Padrão', style: TextStyle(color: FluxApp.secondaryTextColor)),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancelar'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () {
+                  if (controller.text.isNotEmpty) {
+                    provider.setPlaylistCover(widget.playlistName, controller.text.trim());
+                  }
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Salvar', style: TextStyle(color: FluxApp.accentColor)),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _pickCoverFromStorage(BuildContext context, FluxProvider provider) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        // Copy the image to app's documents directory for persistence
+        final appDir = await getApplicationDocumentsDirectory();
+        final coverDir = Directory('${appDir.path}/playlist_covers');
+        if (!await coverDir.exists()) {
+          await coverDir.create(recursive: true);
+        }
+        final fileName = '${widget.playlistName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}_cover${_getExtension(image.path)}';
+        final savedFile = await File(image.path).copy('${coverDir.path}/$fileName');
+        provider.setPlaylistCover(widget.playlistName, savedFile.path);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao selecionar imagem: $e'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
+  String _getExtension(String path) {
+    final dot = path.lastIndexOf('.');
+    if (dot != -1) return path.substring(dot);
+    return '.jpg';
   }
 
   void _showPickCoverFromTracks(BuildContext context, FluxProvider provider) {
@@ -551,8 +620,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                       child: SizedBox(
                                         width: 120, height: 120,
                                         child: coverUrl != null && coverUrl.isNotEmpty
-                                            ? Image.network(coverUrl, fit: BoxFit.cover,
-                                                errorBuilder: (_, __, ___) => _coverPlaceholder())
+                                            ? _buildCoverImage(coverUrl)
                                             : _coverPlaceholder(),
                                       ),
                                     ),
@@ -731,6 +799,22 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 const SafeArea(top: false, child: MiniPlayerBar()),
               ],
             ),
+    );
+  }
+
+  Widget _buildCoverImage(String url) {
+    // Check if it's a local file path
+    if (url.startsWith('/') || url.startsWith('C:') || url.startsWith('D:') || !url.startsWith('http')) {
+      return Image.file(
+        File(url),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _coverPlaceholder(),
+      );
+    }
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _coverPlaceholder(),
     );
   }
 

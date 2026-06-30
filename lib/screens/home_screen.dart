@@ -1,3 +1,4 @@
+import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -92,6 +93,21 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildCoverImage(String url) {
+    if (url.startsWith('/') || url.startsWith('C:') || url.startsWith('D:') || !url.startsWith('http')) {
+      return Image.file(
+        File(url),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const _PlaylistPlaceholder(),
+      );
+    }
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const _PlaylistPlaceholder(),
+    );
+  }
+
   // ── Playlists Quick Grid ──
   Widget _buildPlaylistGrid(
     BuildContext context,
@@ -165,12 +181,7 @@ class HomeScreen extends StatelessWidget {
                   width: 55,
                   height: 55,
                   child: coverUrl != null && coverUrl.isNotEmpty
-                      ? Image.network(
-                          coverUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const _PlaylistPlaceholder(),
-                        )
+                      ? _buildCoverImage(coverUrl)
                       : const _PlaylistPlaceholder(),
                 ),
                 const SizedBox(width: 10),

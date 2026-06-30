@@ -45,6 +45,7 @@ dependencies:
   flutter_local_notifications: ^21.0.0
   translator: ^1.0.4+1
   language_detector: ^1.0.1
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_launcher_icons: "^0.13.1"
@@ -61,7 +62,9 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/logo1.jpeg"
+  image_path: "assets/flux_icon.png"
+  adaptive_icon_background: "#121212"
+  adaptive_icon_foreground: "assets/flux_icon.png"
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -75,6 +78,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    - assets/flux_icon.png
     - assets/logo1.jpeg
   #   - images/a_dot_ham.jpeg
 
