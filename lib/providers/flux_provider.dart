@@ -59,7 +59,15 @@ class FluxProvider extends ChangeNotifier {
   List<Map<String, String>> currentQueue = [];
   Map<String, List<Map<String, String>>> playlists = {"Favoritas": []};
   
+  // --- USER PROFILE ---
+  String username = "";
+  bool isPublic = false;
+  List<String> friends = [];
+  
   // --- SETTINGS ---
+  bool _showTrending = true;
+  bool get showTrending => _showTrending;
+
   String _audioQuality = 'normal';
   String get audioQuality => _audioQuality;
   
@@ -321,6 +329,9 @@ class FluxProvider extends ChangeNotifier {
         await Supabase.instance.client.from('user_data').upsert({
           'user_id': user.id,
           'playlists_json': json.decode(jsonString),
+          'username': username,
+          'is_public': isPublic,
+          'friends': friends,
         }, onConflict: 'user_id');
       } catch (e) {
         debugPrint("FLUX: Error syncing to Supabase: $e");
@@ -437,13 +448,21 @@ class FluxProvider extends ChangeNotifier {
       try {
         final response = await Supabase.instance.client
             .from('user_data')
-            .select('playlists_json')
+            .select('playlists_json, username, is_public, friends')
             .eq('user_id', user.id)
             .maybeSingle();
         
-        if (response != null && response['playlists_json'] != null) {
-          savedData = json.encode(response['playlists_json']);
-          await prefs.setString('flux_data', savedData);
+        if (response != null) {
+          if (response['playlists_json'] != null) {
+            savedData = json.encode(response['playlists_json']);
+            await prefs.setString('flux_data', savedData);
+          }
+          username = response['username']?.toString() ?? "";
+          isPublic = response['is_public'] ?? false;
+          final friendsData = response['friends'];
+          if (friendsData != null && friendsData is List) {
+            friends = List<String>.from(friendsData);
+          }
         }
       } catch (e) {
         debugPrint("FLUX: Error fetching from Supabase: $e");
@@ -472,6 +491,7 @@ class FluxProvider extends ChangeNotifier {
     
     baseUrl = prefs.getString('flux_server_url') ?? "";
     _audioQuality = prefs.getString('flux_audio_quality') ?? 'normal';
+    _showTrending = prefs.getBool('flux_show_trending') ?? true;
     
     await _loadRecentlyPlayed();
     await _loadShuffleMode();
@@ -491,6 +511,73 @@ class FluxProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('flux_server_url', url);
     notifyListeners();
+  }
+
+  Future<void> toggleShowTrending(bool value) async {
+    _showTrending = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flux_show_trending', value);
+    notifyListeners();
+  }
+
+  Future<void> updateUsername(String newUsername) async {
+    username = newUsername;
+    await saveToPrefs();
+    notifyListeners();
+  }
+
+  Future<void> toggleIsPublic(bool value) async {
+    isPublic = value;
+    await saveToPrefs();
+    notifyListeners();
+  }
+
+  Future<void> toggleFriend(String friendId) async {
+    if (friends.contains(friendId)) {
+      friends.remove(friendId);
+    } else {
+      friends.add(friendId);
+    }
+    await saveToPrefs();
+    notifyListeners();
+  }
+
+  Future<List<Map<String, dynamic>>> searchUsers(String query) async {
+    if (query.isEmpty) return [];
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return [];
+      final response = await Supabase.instance.client
+          .rpc('search_users', params: {'query_text': query});
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint("Error searching users: $e");
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getFriendData(String friendId) async {
+    try {
+      final response = await Supabase.instance.client
+          .rpc('get_friend_profile', params: {'friend_uid': friendId});
+      if (response == null) return null;
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      debugPrint("Error getting friend data: $e");
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getFriendsList() async {
+    if (friends.isEmpty) return [];
+    try {
+      final response = await Supabase.instance.client
+          .rpc('get_friends_list', params: {'friend_ids': friends});
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint("Error fetching friends list: $e");
+      return [];
+    }
   }
 
   // --- FILE SYSTEM PATHS (native only) ---
@@ -719,48 +806,39 @@ class FluxProvider extends ChangeNotifier {
     return null;
   }
 
+  ConcatenatingAudioSource? _queueSource;
+
   Future<void> _playFromQueueIndex(int index) async {
     if (index < 0 || index >= currentQueue.length) return;
 
-    final track = currentQueue[index];
-    currentTrack = track;
-    _addToRecentlyPlayed(track);
-    _updatePalette(track['album_image_url']);
+    final children = <AudioSource>[];
+    for (var track in currentQueue) {
+      AudioSource? source;
+      if (!kIsWeb) {
+        final localPath = await getDownloadedAudioPath(track);
+        // We do a sync check if we can, but exists() is async. 
+        // A better approach is to assume StreamAudioSource and fallback, or just do the exists check.
+        // For performance, we'll just use FluxStreamAudioSource which handles local paths too if we make it smart!
+        // Actually, let's just use FluxStreamAudioSource for remote, and check file existence inside it!
+      }
+      children.add(FluxStreamAudioSource(track, this, tag: _createMediaItem(track)));
+    }
+
+    _queueSource = ConcatenatingAudioSource(children: children);
+
+    currentTrack = currentQueue[index];
+    _addToRecentlyPlayed(currentTrack!);
+    _updatePalette(currentTrack!['album_image_url']);
     notifyListeners();
 
     try {
-      if (!kIsWeb) {
-        final localPath = await getDownloadedAudioPath(track);
-        if (await File(localPath).exists()) {
-          debugPrint("FLUX: Playing local file.");
-          await _setAndPlaySource(AudioSource.uri(
-            Uri.file(localPath),
-            tag: _createMediaItem(track),
-          ));
-          return;
-        }
-      }
-
-      final videoId = await _resolveVideoId(track);
-      if (videoId == null) {
-        debugPrint("FLUX: Could not resolve video_id.");
-        return;
-      }
-
-      if (videoId != null) {
-        final streamUrl = await _fetchStreamUrl(videoId);
-        if (streamUrl != null) {
-          await _setAndPlaySource(AudioSource.uri(
-            Uri.parse(streamUrl),
-            tag: _createMediaItem(track),
-          ));
-        }
-      }
+      await player.stop();
+      await player.setAudioSource(_queueSource!, initialIndex: index);
+      player.play();
     } catch (e) {
       debugPrint("FLUX ENGINE ERROR: $e");
     }
 
-    // Trigger Cache Manager for next tracks
     _preloadNextTracks(index);
   }
 
@@ -806,56 +884,16 @@ class FluxProvider extends ChangeNotifier {
     Map<String, String> track, [
     String? serverStreamUrl,
   ]) async {
-    currentTrack = track;
-    _addToRecentlyPlayed(track);
-    _updatePalette(track['album_image_url']);
-    notifyListeners();
-
-    try {
-      await player.stop();
-
-      AudioSource? source;
-
-      if (!kIsWeb) {
-        final localPath = await getDownloadedAudioPath(track);
-        if (await File(localPath).exists()) {
-          source = AudioSource.uri(
-            Uri.file(localPath),
-            tag: _createMediaItem(track),
-          );
-        }
-      }
-
-      if (source == null && serverStreamUrl != null) {
-        source = AudioSource.uri(
-          Uri.parse(serverStreamUrl),
-          tag: _createMediaItem(track),
-        );
-      }
-
-      if (source == null) {
-        final videoId = await _resolveVideoId(track);
-        if (videoId != null) {
-          final streamUrl = await _fetchStreamUrl(videoId);
-          if (streamUrl != null) {
-            source = AudioSource.uri(
-              Uri.parse(streamUrl),
-              tag: _createMediaItem(track),
-            );
-          }
-        }
-      }
-
-      if (source == null) {
-        debugPrint("FLUX: No audio source found for track.");
-        return;
-      }
-
-      await player.setAudioSource(source);
-      player.play();
-    } catch (e) {
-      debugPrint("FLUX: Error during playback: $e");
+    int index = currentQueue.indexWhere((t) =>
+        t['track_name'] == track['track_name'] &&
+        t['artist'] == track['artist']);
+    
+    if (index == -1) {
+      currentQueue.add(track);
+      index = currentQueue.length - 1;
     }
+    
+    await _playFromQueueIndex(index);
   }
 
   void playPlaylist(List<Map<String, String>> tracks, {bool shuffle = false}) {
@@ -936,38 +974,18 @@ class FluxProvider extends ChangeNotifier {
   }
 
   void skipNext() {
-    if (currentTrack == null || currentQueue.isEmpty) return;
-    int currentIndex = currentQueue.indexWhere(
-      (t) =>
-          t['track_name'] == currentTrack!['track_name'] &&
-          t['artist'] == currentTrack!['artist'],
-    );
-    if (currentIndex != -1) {
-      if (currentIndex < currentQueue.length - 1) {
-        _playFromQueueIndex(currentIndex + 1);
-      } else if (_repeatMode == PlaybackRepeatMode.all) {
-        _playFromQueueIndex(0);
-      }
+    if (player.hasNext) {
+      player.seekToNext();
     }
   }
 
   void skipPrevious() {
-    if (currentTrack == null || currentQueue.isEmpty) return;
-    
     if (player.position.inSeconds > 3) {
       player.seek(Duration.zero);
       return;
     }
-
-    int currentIndex = currentQueue.indexWhere(
-      (t) =>
-          t['track_name'] == currentTrack!['track_name'] &&
-          t['artist'] == currentTrack!['artist'],
-    );
-    if (currentIndex > 0) {
-      _playFromQueueIndex(currentIndex - 1);
-    } else if (_repeatMode == PlaybackRepeatMode.all) {
-      _playFromQueueIndex(currentQueue.length - 1);
+    if (player.hasPrevious) {
+      player.seekToPrevious();
     } else {
       player.seek(Duration.zero);
     }
@@ -987,6 +1005,54 @@ class FluxProvider extends ChangeNotifier {
       artUri: (track['album_image_url'] != null && track['album_image_url']!.isNotEmpty) 
           ? Uri.parse(track['album_image_url']!) 
           : null,
+    );
+  }
+}
+
+class FluxStreamAudioSource extends StreamAudioSource {
+  final Map<String, String> track;
+  final FluxProvider provider;
+
+  FluxStreamAudioSource(this.track, this.provider, {super.tag});
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    if (!kIsWeb) {
+      final localPath = await provider.getDownloadedAudioPath(track);
+      if (await File(localPath).exists()) {
+        final file = File(localPath);
+        final length = await file.length();
+        final effectiveStart = start ?? 0;
+        final effectiveEnd = end ?? (length - 1);
+        final stream = file.openRead(effectiveStart, effectiveEnd + 1);
+        return StreamAudioResponse(
+          sourceLength: length,
+          contentLength: effectiveEnd - effectiveStart + 1,
+          offset: effectiveStart,
+          stream: stream,
+          contentType: 'audio/mpeg',
+        );
+      }
+    }
+
+    final videoId = await provider._resolveVideoId(track);
+    if (videoId == null) throw Exception("Could not resolve video_id");
+    final streamUrl = await provider._fetchStreamUrl(videoId);
+    if (streamUrl == null) throw Exception("Could not fetch stream_url");
+
+    final request = http.Request('GET', Uri.parse(streamUrl));
+    if (start != null || end != null) {
+      request.headers['Range'] = 'bytes=${start ?? 0}-${end ?? ''}';
+    }
+    request.headers['ngrok-skip-browser-warning'] = 'true';
+
+    final response = await http.Client().send(request);
+    return StreamAudioResponse(
+      sourceLength: response.contentLength,
+      contentLength: response.contentLength,
+      offset: start ?? 0,
+      stream: response.stream,
+      contentType: response.headers['content-type'] ?? 'audio/mpeg',
     );
   }
 }

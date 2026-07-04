@@ -496,6 +496,27 @@ class _TrackTile extends StatelessWidget {
               ),
             ),
 
+            // Heart button
+            Consumer<FluxProvider>(
+              builder: (context, provider, child) {
+                final isFav = provider.isFavorite(track);
+                return SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    icon: Icon(
+                      isFav ? Icons.favorite : Icons.favorite_border,
+                      color: isFav ? FluxApp.accentColor : FluxApp.secondaryTextColor,
+                      size: 20,
+                    ),
+                    padding: EdgeInsets.zero,
+                    splashRadius: 20,
+                    onPressed: () => provider.toggleFavorite(track),
+                  ),
+                );
+              },
+            ),
+
             // Menu button
             SizedBox(
               width: 36,

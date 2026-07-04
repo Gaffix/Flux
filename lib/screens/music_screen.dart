@@ -5,6 +5,7 @@ import '../providers/flux_provider.dart';
 import '../screens/lyrics_view.dart';
 import '../main.dart';
 import 'package:share_plus/share_plus.dart';
+import 'artist_screen.dart';
 
 class MusicScreen extends StatelessWidget {
   const MusicScreen({super.key});
@@ -166,15 +167,30 @@ class MusicScreen extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 6),
-                          Text(
-                            track['artist'] ?? 'Artista Desconhecido',
-                            style: GoogleFonts.inter(
-                              color: FluxApp.secondaryTextColor,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w400,
+                          GestureDetector(
+                            onTap: () {
+                              final artist = track['artist'];
+                              if (artist != null && artist.isNotEmpty && artist != 'Artista Desconhecido') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ArtistScreen(artistName: artist),
+                                  ),
+                                );
+                              }
+                            },
+                            child: Text(
+                              track['artist'] ?? 'Artista Desconhecido',
+                              style: GoogleFonts.inter(
+                                color: FluxApp.secondaryTextColor,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                decoration: TextDecoration.underline,
+                                decorationColor: FluxApp.secondaryTextColor.withOpacity(0.5),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),

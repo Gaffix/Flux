@@ -237,9 +237,31 @@ class _SearchScreenState extends State<SearchScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(video.author),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.playlist_add),
-                          onPressed: () => _showPlaylistOptions(video),
+                        trailing: Consumer<FluxProvider>(
+                          builder: (context, provider, child) {
+                            final trackMap = {
+                              "track_name": video.title,
+                              "artist": video.author,
+                              "album_image_url": video.thumbnails.lowResUrl,
+                              "video_id": video.id.value,
+                            };
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    provider.isFavorite(trackMap) ? Icons.favorite : Icons.favorite_border,
+                                    color: provider.isFavorite(trackMap) ? FluxApp.accentColor : FluxApp.secondaryTextColor,
+                                  ),
+                                  onPressed: () => provider.toggleFavorite(trackMap),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.playlist_add),
+                                  onPressed: () => _showPlaylistOptions(video),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                         onTap: () => _onVideoTap(context, video),
                       );

@@ -15,12 +15,14 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLoading = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _usernameController = TextEditingController();
 
   Future<void> _submit() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
+    final username = _usernameController.text.trim();
 
-    if (email.isEmpty || password.isEmpty) {
+    if (email.isEmpty || password.isEmpty || (!_isLogin && username.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor, preencha todos os campos.')),
       );
@@ -36,10 +38,24 @@ class _AuthScreenState extends State<AuthScreen> {
           password: password,
         );
       } else {
-        await Supabase.instance.client.auth.signUp(
+        final response = await Supabase.instance.client.auth.signUp(
           email: email,
           password: password,
+          data: {'username': username},
         );
+        
+        // Ensure user_data is created with username
+        if (response.user != null) {
+          try {
+            await Supabase.instance.client.from('user_data').upsert({
+              'user_id': response.user!.id,
+              'username': username,
+            }, onConflict: 'user_id');
+          } catch (e) {
+            debugPrint("Error creating user_data: $e");
+          }
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Conta criada com sucesso! Faça login.')),
@@ -109,6 +125,24 @@ class _AuthScreenState extends State<AuthScreen> {
                   const SizedBox(height: 48),
                   
                   // Form Fields
+                  if (!_isLogin) ...[
+                    TextField(
+                      controller: _usernameController,
+                      keyboardType: TextInputType.text,
+                      style: const TextStyle(color: FluxApp.primaryTextColor),
+                      decoration: InputDecoration(
+                        hintText: 'Nome de usuário',
+                        prefixIcon: const Icon(Icons.person_outline, color: FluxApp.secondaryTextColor),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,

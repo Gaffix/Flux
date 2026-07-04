@@ -14,11 +14,13 @@ import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
 class PlaylistDetailScreen extends StatefulWidget {
   final String playlistName;
   final List<Map<String, String>> tracks;
+  final bool readOnly;
 
   const PlaylistDetailScreen({
     super.key,
     required this.playlistName,
     required this.tracks,
+    this.readOnly = false,
   });
 
   @override
@@ -350,25 +352,26 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     }
                   },
                 ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                title: const Text('Remover desta playlist', style: TextStyle(color: Colors.redAccent)),
-                onTap: () {
-                  provider.removeFromPlaylist(widget.playlistName, track);
-                  setState(() {
-                    filteredTracks.remove(track);
-                    widget.tracks.remove(track);
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text("Música removida"),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  );
-                },
-              ),
+              if (!widget.readOnly)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  title: const Text('Remover desta playlist', style: TextStyle(color: Colors.redAccent)),
+                  onTap: () {
+                    provider.removeFromPlaylist(widget.playlistName, track);
+                    setState(() {
+                      filteredTracks.remove(track);
+                      widget.tracks.remove(track);
+                    });
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text("Música removida"),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    );
+                  },
+                ),
               const SizedBox(height: 8),
             ],
           ),
@@ -480,7 +483,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               });
             },
           ),
-          if (!_isSearching)
+          if (!_isSearching && !widget.readOnly)
             PopupMenuButton<String>(
               color: const Color(0xFF1E1E2E),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -771,6 +774,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                                       children: [
                                         if (status == "DOWNLOADED")
                                           const Icon(Icons.check_circle_rounded, color: FluxApp.accentColor, size: 18),
+                                        IconButton(
+                                          icon: Icon(
+                                            provider.isFavorite(track) ? Icons.favorite : Icons.favorite_border,
+                                            size: 20,
+                                            color: provider.isFavorite(track) ? FluxApp.accentColor : FluxApp.secondaryTextColor,
+                                          ),
+                                          onPressed: () => provider.toggleFavorite(track),
+                                        ),
                                         IconButton(
                                           icon: const Icon(Icons.more_vert, size: 20),
                                           onPressed: () => _showTrackOptions(context, track, provider),

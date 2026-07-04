@@ -104,22 +104,23 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 24),
 
               // ── 4. Em Alta ──
-              _buildSectionTitle('Em Alta'),
-              const SizedBox(height: 12),
-              if (_isLoadingTrending)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Center(child: CircularProgressIndicator(color: FluxApp.accentColor)),
-                )
-              else if (_trendingTracks.isNotEmpty)
-                _buildRecentlyPlayed(context, provider, _trendingTracks)
-              else
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Text("Não foi possível carregar as tendências.", style: TextStyle(color: FluxApp.secondaryTextColor)),
-                ),
-
-              const SizedBox(height: 24),
+              if (provider.showTrending) ...[
+                _buildSectionTitle('Em Alta'),
+                const SizedBox(height: 12),
+                if (_isLoadingTrending)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Center(child: CircularProgressIndicator(color: FluxApp.accentColor)),
+                  )
+                else if (_trendingTracks.isNotEmpty)
+                  _buildRecentlyPlayed(context, provider, _trendingTracks)
+                else
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text("Não foi possível carregar as tendências.", style: TextStyle(color: FluxApp.secondaryTextColor)),
+                  ),
+                const SizedBox(height: 24),
+              ],
 
               // ── 5. Tocadas Recentemente ──
               _buildSectionTitle('Tocadas Recentemente'),
@@ -402,6 +403,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+          ),
+          trailing: IconButton(
+            icon: Icon(
+              provider.isFavorite(track) ? Icons.favorite : Icons.favorite_border,
+              size: 20,
+              color: provider.isFavorite(track) ? FluxApp.accentColor : FluxApp.secondaryTextColor,
+            ),
+            onPressed: () => provider.toggleFavorite(track),
           ),
           onTap: () {
             provider.currentQueue = [track];
