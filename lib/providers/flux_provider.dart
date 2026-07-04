@@ -124,23 +124,40 @@ class FluxProvider extends ChangeNotifier {
       }
     });
 
-    player.currentIndexStream.listen((index) {
-      debugPrint("FLUX EVENT: currentIndexStream fired with index $index");
-      if (index != null && index >= 0 && index < currentQueue.length) {
-        final newTrack = currentQueue[index];
+    player.sequenceStateStream.listen((sequenceState) {
+      if (sequenceState == null || sequenceState.currentSource == null) return;
+      
+      final currentItem = sequenceState.currentSource!.tag as MediaItem?;
+      if (currentItem != null) {
+        debugPrint("FLUX EVENT: sequenceStateStream fired. Current Item from tag is: ${currentItem.title}");
+        final newTrack = {
+          'video_id': currentItem.id,
+          'track_name': currentItem.title,
+          'artist': currentItem.artist ?? 'Artista Desconhecido',
+          'album_image_url': currentItem.artUri?.toString() ?? '',
+        };
+
         final isSameTrack = currentTrack != null && 
                             currentTrack!['track_name'] == newTrack['track_name'] && 
                             currentTrack!['artist'] == newTrack['artist'];
         
         if (!isSameTrack) {
-          debugPrint("FLUX EVENT: Updating currentTrack to ${newTrack['track_name']}");
+          debugPrint("FLUX EVENT: sequenceStateStream fired. Updating currentTrack to ${newTrack['track_name']}");
+          
+          // The notification is perfectly in sync because it uses the MediaItem tag.
+          // We must use the exact same data to guarantee the UI is in sync.
           currentTrack = newTrack;
+          
+          final index = sequenceState.currentIndex;
+          if (index != null && index >= 0 && index < currentQueue.length) {
+             _preloadNextTracks(index);
+          }
+          
           _addToRecentlyPlayed(currentTrack!);
           _updatePalette(currentTrack!['album_image_url']);
           notifyListeners();
-          _preloadNextTracks(index);
         } else {
-          // Keep currentTrack reference but trigger UI update just in case
+          // Apenas garanta que a UI atualize caso algo mais tenha mudado (ex: isPlaying state não pegou)
           notifyListeners();
         }
       }
