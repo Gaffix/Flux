@@ -12,21 +12,21 @@ class YouTubeApiService {
   Future<List<Map<String, String>>> fetchTrending() async {
     try {
       final baseUrl = await _getBaseUrl();
-      final response = await http.get(Uri.parse('\$baseUrl/trending'));
+      final response = await http.get(Uri.parse('$baseUrl/trending'));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        return data.map<Map<String, String>>((video) => {
-          "track_name": video["title"] ?? "Desconhecido",
-          "artist": video["channel"] ?? "Desconhecido",
-          "album_image_url": "https://i.ytimg.com/vi/\${video["video_id"]}/hqdefault.jpg",
-          "video_id": video["video_id"],
+        return data.map<Map<String, String>>((video) => <String, String>{
+          "track_name": video["title"]?.toString() ?? "Desconhecido",
+          "artist": video["channel"]?.toString() ?? "Desconhecido",
+          "album_image_url": "https://i.ytimg.com/vi/${video['video_id']}/hqdefault.jpg",
+          "video_id": video["video_id"]?.toString() ?? "",
         }).toList();
       } else {
-        print("Erro no backend ao buscar trending: \${response.statusCode}");
+        print("Erro no backend ao buscar trending: ${response.statusCode}");
       }
     } catch (e) {
-      print("Erro ao buscar trending: \$e");
+      print("Erro ao buscar trending: $e");
     }
     return [];
   }
@@ -34,22 +34,22 @@ class YouTubeApiService {
   Future<List<Map<String, String>>> fetchByGenre(String genre) async {
     try {
       final baseUrl = await _getBaseUrl();
-      final query = Uri.encodeComponent("\$genre hits 2024");
-      final response = await http.get(Uri.parse('\$baseUrl/trending?q=\$query'));
+      final query = Uri.encodeComponent("$genre hits 2024");
+      final response = await http.get(Uri.parse('$baseUrl/trending?q=$query'));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        return data.map<Map<String, String>>((video) => {
-          "track_name": video["title"] ?? "Desconhecido",
-          "artist": video["channel"] ?? "Desconhecido",
-          "album_image_url": "https://i.ytimg.com/vi/\${video["video_id"]}/hqdefault.jpg",
-          "video_id": video["video_id"],
+        return data.map<Map<String, String>>((video) => <String, String>{
+          "track_name": video["title"]?.toString() ?? "Desconhecido",
+          "artist": video["channel"]?.toString() ?? "Desconhecido",
+          "album_image_url": "https://i.ytimg.com/vi/${video['video_id']}/hqdefault.jpg",
+          "video_id": video["video_id"]?.toString() ?? "",
         }).toList();
       } else {
-        print("Erro no backend ao buscar gênero: \${response.statusCode}");
+        print("Erro no backend ao buscar gênero: ${response.statusCode}");
       }
     } catch (e) {
-      print("Erro ao buscar gênero \$genre: \$e");
+      print("Erro ao buscar gênero $genre: $e");
     }
     return [];
   }
