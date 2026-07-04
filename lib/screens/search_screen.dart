@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
@@ -133,66 +133,21 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _onVideoTap(BuildContext context, Video video) async {
     final provider = Provider.of<FluxProvider>(context, listen: false);
 
-    if (provider.baseUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Configure o servidor primeiro nas configurações (⚙️).",
-          ),
-        ),
-      );
-      return;
-    }
-
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Carregando ${video.title}...")),
+      SnackBar(
+        content: Text("Carregando ${video.title}..."),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
 
-    final serverUrl = "${provider.baseUrl}/get_audio?id=${video.id.value}";
+    final trackMap = {
+      "track_name": video.title,
+      "artist": video.author,
+      "album_image_url": video.thumbnails.lowResUrl,
+      "video_id": video.id.value,
+    };
 
-    try {
-      debugPrint("FLUX: Calling server: $serverUrl");
-      final response = await http.get(
-        Uri.parse(serverUrl),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
-
-      if (response.statusCode == 200) {
-        json.decode(response.body);
-        debugPrint("FLUX: Stream URL received, playing...");
-
-        final trackMap = {
-          "track_name": video.title,
-          "artist": video.author,
-          "album_image_url": video.thumbnails.lowResUrl,
-          "video_id": video.id.value,
-        };
-
-        // Adiciona à queue com apenas essa faixa para controles prev/next
-        provider.playPlaylist([trackMap]);
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Erro do servidor: ${response.statusCode}. Verifique a URL nas configurações.",
-              ),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint("FLUX: Connection error: $e");
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Erro de conexão. Verifique se o servidor está online e a URL correta.",
-            ),
-          ),
-        );
-      }
-    }
+    provider.playPlaylist([trackMap]);
   }
 
   @override

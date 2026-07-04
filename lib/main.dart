@@ -1,10 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'providers/flux_provider.dart';
 import 'screens/main_page.dart';
+import 'screens/auth_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.flux.channel.audio',
+    androidNotificationChannelName: 'Flux Audio',
+    androidNotificationOngoing: true,
+  );
+  await Supabase.initialize(
+    url: 'https://sfnmgxwhkyimblejgtrs.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmbm1neHdoa3lpbWJsZWpndHJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxMTM1MjcsImV4cCI6MjA5ODY4OTUyN30.bKE7eRCZ32AAym14LKvk2xCWw03EBySz8z8a8YK-TEA',
+  );
   runApp(
     ChangeNotifierProvider(
       create: (_) => FluxProvider(),
@@ -56,7 +69,9 @@ class FluxApp extends StatelessWidget {
           surface: cardColor,
         ),
       ),
-      home: const MainPage(),
+      home: Supabase.instance.client.auth.currentUser == null
+          ? const AuthScreen()
+          : const MainPage(),
       debugShowCheckedModeBanner: false,
     );
   }

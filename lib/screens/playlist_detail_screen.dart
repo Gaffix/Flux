@@ -432,18 +432,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       } catch (_) {}
     }
 
-    if (provider.baseUrl.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("Configure o servidor primeiro nas configurações (⚙️)."),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
-      }
-      return;
-    }
+
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

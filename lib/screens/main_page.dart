@@ -3,10 +3,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../main.dart';
 import '../widgets/mini_player_bar.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/flux_provider.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
 import 'search_screen.dart';
+import 'auth_screen.dart';
+import 'settings_screen.dart';
 
 
 class MainPage extends StatefulWidget {
@@ -38,26 +41,20 @@ class _MainPageState extends State<MainPage> {
             fontSize: 22,
           ),
         ),
-        actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 8.0),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.05),
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => _showSettingsDialog(context),
-              splashRadius: 0.1,
-              highlightColor: Colors.transparent,
-              splashColor: Colors.transparent,
-              hoverColor: Colors.white10, // Feedback suave para mouse
-            ),
-          ),
-        ],
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: _widgetOptions.elementAt(_selectedIndex),
       bottomSheet: const MiniPlayerBar(),
@@ -136,137 +133,5 @@ class _MainPageState extends State<MainPage> {
     );
   }
 
-  void _showSettingsDialog(BuildContext context) {
-    final provider = Provider.of<FluxProvider>(context, listen: false);
-    final controller = TextEditingController(text: provider.baseUrl);
 
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: const Row(
-              children: [
-                Icon(Icons.dns_outlined, size: 24),
-                SizedBox(width: 10),
-                Text(
-                  "Configurar Servidor",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: controller,
-                  decoration: InputDecoration(
-                    hintText: "https://seu-ngrok.ngrok-free.app",
-                    labelText: "URL do servidor",
-                    filled: true,
-                    fillColor: Colors.grey.withOpacity(0.1),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: FluxApp.accentColor,
-                        width: 2,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (kIsWeb)
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.withOpacity(0.5)),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          color: Colors.orange,
-                          size: 18,
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            "No navegador, o servidor precisa ter CORS configurado para aceitar requisições.",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (!kIsWeb)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 4.0),
-                    child: Text(
-                      "Exemplo: https://abc123.ngrok-free.app",
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ),
-              ],
-            ),
-            actionsPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
-            actions: [
-              TextButton(
-                style: TextButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancelar"),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                ),
-                onPressed: () {
-                  provider.setBaseUrl(controller.text.trim());
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      content: const Text("Servidor salvo com sucesso!"),
-                    ),
-                  );
-                },
-                child: const Text("Salvar"),
-              ),
-            ],
-          ),
-    );
-  }
 }

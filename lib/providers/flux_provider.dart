@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
@@ -8,11 +9,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:palette_generator/palette_generator.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+enum PlaybackRepeatMode { off, all, one }
 
 class FluxProvider extends ChangeNotifier {
   final AudioPlayer player = AudioPlayer();
-  String _baseUrl = "";
-  String get baseUrl => _baseUrl;
+
+  String baseUrl = "";
 
   // --- DOWNLOAD QUEUE ---
   final Queue<Map<String, String>> _downloadQueue = Queue();
@@ -24,10 +30,58 @@ class FluxProvider extends ChangeNotifier {
   ValueNotifier<double>? getProgress(String videoId) => _progressNotifiers[videoId];
   String getTrackStatus(String videoId) => _trackStatuses[videoId] ?? "NONE";
 
+  // --- SLEEP TIMER ---
+  Timer? _sleepTimer;
+  DateTime? _sleepTimerEndTime;
+
+  DateTime? get sleepTimerEndTime => _sleepTimerEndTime;
+
+  void startSleepTimer(Duration duration) {
+    _sleepTimer?.cancel();
+    _sleepTimerEndTime = DateTime.now().add(duration);
+    _sleepTimer = Timer(duration, () {
+      player.stop();
+      _sleepTimerEndTime = null;
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTimerEndTime = null;
+    notifyListeners();
+  }
+
   // --- CORE STATE ---
   Map<String, String>? currentTrack;
   List<Map<String, String>> currentQueue = [];
   Map<String, List<Map<String, String>>> playlists = {"Favoritas": []};
+  
+  // --- SETTINGS ---
+  String _audioQuality = 'normal';
+  String get audioQuality => _audioQuality;
+  
+  Color dominantColor = const Color(0xFF1DB954);
+
+  Future<void> _updatePalette(String? imageUrl) async {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      dominantColor = const Color(0xFF1DB954);
+      notifyListeners();
+      return;
+    }
+    try {
+      final PaletteGenerator palette = await PaletteGenerator.fromImageProvider(
+        NetworkImage(imageUrl),
+      );
+      dominantColor = palette.dominantColor?.color ?? palette.vibrantColor?.color ?? const Color(0xFF1DB954);
+      notifyListeners();
+    } catch (e) {
+      dominantColor = const Color(0xFF1DB954);
+      notifyListeners();
+    }
+  }
 
   // --- RECENTLY PLAYED ---
   List<Map<String, String>> _recentlyPlayed = [];
@@ -43,7 +97,7 @@ class FluxProvider extends ChangeNotifier {
 
   FluxProvider() {
     _loadFromPrefs();
-    _loadBaseUrl();
+
     _loadPlaylistCovers();
     _registerPlayerListener();
   }
@@ -53,7 +107,12 @@ class FluxProvider extends ChangeNotifier {
     _playerListenerRegistered = true;
     player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
-        skipNext();
+        if (_repeatMode != PlaybackRepeatMode.one) {
+          skipNext();
+        } else {
+          player.seek(Duration.zero);
+          player.play();
+        }
       }
     });
   }
@@ -172,6 +231,38 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
+  // --- PINNED PLAYLISTS ---
+  List<String> _pinnedPlaylists = [];
+  bool isPinned(String name) => _pinnedPlaylists.contains(name);
+
+  void togglePin(String name) {
+    if (_pinnedPlaylists.contains(name)) {
+      _pinnedPlaylists.remove(name);
+    } else {
+      _pinnedPlaylists.add(name);
+    }
+    _savePinnedPlaylists();
+    notifyListeners();
+  }
+
+  Future<void> _savePinnedPlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('flux_pinned_playlists', json.encode(_pinnedPlaylists));
+  }
+
+  Future<void> _loadPinnedPlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? savedData = prefs.getString('flux_pinned_playlists');
+    if (savedData != null) {
+      try {
+        final List<dynamic> decoded = json.decode(savedData);
+        _pinnedPlaylists = decoded.map((e) => e.toString()).toList();
+      } catch (e) {
+        debugPrint("Erro ao carregar pinned: \$e");
+      }
+    }
+  }
+
   // --- ARTIST HELPERS ---
   /// Returns all unique artists across all playlists, sorted by track count desc
   List<MapEntry<String, int>> getAllArtistsSorted() {
@@ -221,7 +312,20 @@ class FluxProvider extends ChangeNotifier {
   // --- PERSISTENCE ---
   Future<void> saveToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('flux_data', json.encode(playlists));
+    final jsonString = json.encode(playlists);
+    await prefs.setString('flux_data', jsonString);
+    
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      try {
+        await Supabase.instance.client.from('user_data').upsert({
+          'user_id': user.id,
+          'playlists_json': json.decode(jsonString),
+        }, onConflict: 'user_id');
+      } catch (e) {
+        debugPrint("FLUX: Error syncing to Supabase: $e");
+      }
+    }
   }
 
   Future<void> enqueueDownload(Map<String, String> track) async {
@@ -321,22 +425,34 @@ class FluxProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    _baseUrl = prefs.getString('server_url') ?? "";
-    notifyListeners();
-  }
 
-  Future<void> setBaseUrl(String url) async {
-    final prefs = await SharedPreferences.getInstance();
-    _baseUrl = url.trimRight().replaceAll(RegExp(r'/+$'), '');
-    await prefs.setString('server_url', _baseUrl);
-    notifyListeners();
-  }
 
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? savedData = prefs.getString('flux_data');
+    final user = Supabase.instance.client.auth.currentUser;
+
+    String? savedData;
+
+    if (user != null) {
+      try {
+        final response = await Supabase.instance.client
+            .from('user_data')
+            .select('playlists_json')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        
+        if (response != null && response['playlists_json'] != null) {
+          savedData = json.encode(response['playlists_json']);
+          await prefs.setString('flux_data', savedData);
+        }
+      } catch (e) {
+        debugPrint("FLUX: Error fetching from Supabase: $e");
+      }
+    }
+
+    if (savedData == null) {
+      savedData = prefs.getString('flux_data');
+    }
 
     if (savedData != null) {
       try {
@@ -353,8 +469,27 @@ class FluxProvider extends ChangeNotifier {
         debugPrint("Erro ao carregar dados: $e");
       }
     }
+    
+    baseUrl = prefs.getString('flux_server_url') ?? "";
+    _audioQuality = prefs.getString('flux_audio_quality') ?? 'normal';
+    
     await _loadRecentlyPlayed();
     await _loadShuffleMode();
+    await _loadPinnedPlaylists();
+    notifyListeners();
+  }
+
+  Future<void> setAudioQuality(String quality) async {
+    _audioQuality = quality;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('flux_audio_quality', quality);
+    notifyListeners();
+  }
+
+  Future<void> setBaseUrl(String url) async {
+    baseUrl = url;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('flux_server_url', url);
     notifyListeners();
   }
 
@@ -529,42 +664,57 @@ class FluxProvider extends ChangeNotifier {
     String? videoId = track['video_id'];
     if (videoId != null && videoId.isNotEmpty) return videoId;
 
-    debugPrint("FLUX: Missing video_id. Searching YouTube...");
+    if (baseUrl.isEmpty) {
+      debugPrint("FLUX: baseUrl is empty. Configure o servidor para buscar IDs.");
+      return null;
+    }
+
+    debugPrint("FLUX: Missing video_id. Searching using Python backend...");
     try {
-      final yt = YoutubeExplode();
-      final search = await yt.search.search(
-        "${track['track_name']} ${track['artist']} audio",
+      final query = "${track['track_name']} ${track['artist']} audio";
+      final searchUrl = "$baseUrl/search?q=${Uri.encodeComponent(query)}";
+      final response = await http.get(
+        Uri.parse(searchUrl),
+        headers: {'ngrok-skip-browser-warning': 'true'},
       );
-      if (search.isNotEmpty) {
-        videoId = search.first.id.value;
-        track['video_id'] = videoId;
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        videoId = data['video_id']?.toString();
+        if (videoId != null) {
+           track['video_id'] = videoId;
+           saveToPrefs();
+        }
+      } else {
+        debugPrint("FLUX: Backend search returned status code ${response.statusCode}");
       }
-      yt.close();
     } catch (e) {
-      debugPrint("FLUX: YouTube search error: $e");
+      debugPrint("FLUX: Backend search error: $e");
     }
     return videoId;
   }
 
   Future<String?> _fetchStreamUrl(String videoId) async {
-    if (_baseUrl.isEmpty) {
-      debugPrint("FLUX: baseUrl not configured!");
+    if (baseUrl.isEmpty) {
+      debugPrint("FLUX: baseUrl is empty. Configure o servidor.");
       return null;
     }
+    
     try {
-      final url = "$_baseUrl/get_audio?id=$videoId";
+      final serverUrl = "$baseUrl/get_audio?id=$videoId&quality=$_audioQuality";
       final response = await http.get(
-        Uri.parse(url),
+        Uri.parse(serverUrl),
         headers: {'ngrok-skip-browser-warning': 'true'},
       );
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return data['url'] as String?;
+        return data['url']?.toString();
       } else {
-        debugPrint("FLUX: Server error ${response.statusCode}");
+        debugPrint("FLUX: Server returned status code ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("FLUX: Error fetching stream URL: $e");
+      debugPrint("FLUX: Error fetching from Python server: $e");
     }
     return null;
   }
@@ -575,6 +725,7 @@ class FluxProvider extends ChangeNotifier {
     final track = currentQueue[index];
     currentTrack = track;
     _addToRecentlyPlayed(track);
+    _updatePalette(track['album_image_url']);
     notifyListeners();
 
     try {
@@ -582,7 +733,10 @@ class FluxProvider extends ChangeNotifier {
         final localPath = await getDownloadedAudioPath(track);
         if (await File(localPath).exists()) {
           debugPrint("FLUX: Playing local file.");
-          await _setAndPlaySource(AudioSource.uri(Uri.file(localPath)));
+          await _setAndPlaySource(AudioSource.uri(
+            Uri.file(localPath),
+            tag: _createMediaItem(track),
+          ));
           return;
         }
       }
@@ -593,12 +747,52 @@ class FluxProvider extends ChangeNotifier {
         return;
       }
 
-      final streamUrl = await _fetchStreamUrl(videoId);
-      if (streamUrl != null) {
-        await _setAndPlaySource(AudioSource.uri(Uri.parse(streamUrl)));
+      if (videoId != null) {
+        final streamUrl = await _fetchStreamUrl(videoId);
+        if (streamUrl != null) {
+          await _setAndPlaySource(AudioSource.uri(
+            Uri.parse(streamUrl),
+            tag: _createMediaItem(track),
+          ));
+        }
       }
     } catch (e) {
       debugPrint("FLUX ENGINE ERROR: $e");
+    }
+
+    // Trigger Cache Manager for next tracks
+    _preloadNextTracks(index);
+  }
+
+  Future<void> _preloadNextTracks(int currentIndex) async {
+    if (kIsWeb) return;
+    
+    // Pre-cache the next 2 tracks
+    for (int i = 1; i <= 2; i++) {
+      int nextIndex = currentIndex + i;
+      if (nextIndex < currentQueue.length) {
+        final track = currentQueue[nextIndex];
+        
+        if (await isTrackDownloaded(track)) continue;
+
+        final videoId = await _resolveVideoId(track);
+        if (videoId == null) continue;
+
+        if (_activeDownloads.contains(videoId) || _trackStatuses[videoId] == "DOWNLOADED") continue;
+
+        debugPrint("FLUX CACHE: Pre-caching next track: ${track['track_name']}");
+        _activeDownloads.add(videoId);
+        
+        try {
+          await _executeDownload(track, videoId);
+          _trackStatuses[videoId] = "DOWNLOADED";
+          debugPrint("FLUX CACHE: Pre-cached successfully: ${track['track_name']}");
+        } catch (e) {
+          debugPrint("FLUX CACHE: Pre-cache failed for ${track['track_name']}: $e");
+        } finally {
+          _activeDownloads.remove(videoId);
+        }
+      }
     }
   }
 
@@ -614,6 +808,7 @@ class FluxProvider extends ChangeNotifier {
   ]) async {
     currentTrack = track;
     _addToRecentlyPlayed(track);
+    _updatePalette(track['album_image_url']);
     notifyListeners();
 
     try {
@@ -624,12 +819,18 @@ class FluxProvider extends ChangeNotifier {
       if (!kIsWeb) {
         final localPath = await getDownloadedAudioPath(track);
         if (await File(localPath).exists()) {
-          source = AudioSource.uri(Uri.file(localPath));
+          source = AudioSource.uri(
+            Uri.file(localPath),
+            tag: _createMediaItem(track),
+          );
         }
       }
 
       if (source == null && serverStreamUrl != null) {
-        source = AudioSource.uri(Uri.parse(serverStreamUrl));
+        source = AudioSource.uri(
+          Uri.parse(serverStreamUrl),
+          tag: _createMediaItem(track),
+        );
       }
 
       if (source == null) {
@@ -637,7 +838,10 @@ class FluxProvider extends ChangeNotifier {
         if (videoId != null) {
           final streamUrl = await _fetchStreamUrl(videoId);
           if (streamUrl != null) {
-            source = AudioSource.uri(Uri.parse(streamUrl));
+            source = AudioSource.uri(
+              Uri.parse(streamUrl),
+              tag: _createMediaItem(track),
+            );
           }
         }
       }
@@ -657,13 +861,80 @@ class FluxProvider extends ChangeNotifier {
   void playPlaylist(List<Map<String, String>> tracks, {bool shuffle = false}) {
     if (tracks.isEmpty) return;
 
+    _originalQueue = List.from(tracks);
     currentQueue = List.from(tracks);
+    _isShuffled = shuffle;
     if (shuffle) currentQueue.shuffle();
 
     _playFromQueueIndex(0);
   }
 
   // --- QUEUE CONTROLS ---
+  
+  PlaybackRepeatMode _repeatMode = PlaybackRepeatMode.off;
+  PlaybackRepeatMode get repeatMode => _repeatMode;
+
+  bool _isShuffled = false;
+  bool get isShuffled => _isShuffled;
+  List<Map<String, String>> _originalQueue = [];
+
+  void toggleRepeatMode() {
+    if (_repeatMode == PlaybackRepeatMode.off) {
+      _repeatMode = PlaybackRepeatMode.all;
+      player.setLoopMode(LoopMode.off); // We handle 'all' manually
+    } else if (_repeatMode == PlaybackRepeatMode.all) {
+      _repeatMode = PlaybackRepeatMode.one;
+      player.setLoopMode(LoopMode.one); // just_audio loops the current source
+    } else {
+      _repeatMode = PlaybackRepeatMode.off;
+      player.setLoopMode(LoopMode.off);
+    }
+    notifyListeners();
+  }
+
+  void toggleShuffle() {
+    _isShuffled = !_isShuffled;
+    if (_isShuffled) {
+      _originalQueue = List.from(currentQueue);
+      if (currentTrack != null) {
+        currentQueue.removeWhere((t) => t['track_name'] == currentTrack!['track_name'] && t['artist'] == currentTrack!['artist']);
+        currentQueue.shuffle();
+        currentQueue.insert(0, currentTrack!);
+      } else {
+        currentQueue.shuffle();
+      }
+    } else {
+      currentQueue = List.from(_originalQueue);
+    }
+    notifyListeners();
+  }
+
+  void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = currentQueue.removeAt(oldIndex);
+    currentQueue.insert(newIndex, item);
+    notifyListeners();
+  }
+
+  bool isFavorite(Map<String, String> track) {
+    if (!playlists.containsKey("Favoritas")) return false;
+    return playlists["Favoritas"]!.any((t) => t['track_name'] == track['track_name'] && t['artist'] == track['artist']);
+  }
+
+  void toggleFavorite(Map<String, String> track) {
+    if (!playlists.containsKey("Favoritas")) {
+      createPlaylist("Favoritas");
+    }
+    if (isFavorite(track)) {
+      removeFromPlaylist("Favoritas", track);
+    } else {
+      addTrackToPlaylist("Favoritas", track);
+    }
+    notifyListeners();
+  }
+
   void skipNext() {
     if (currentTrack == null || currentQueue.isEmpty) return;
     int currentIndex = currentQueue.indexWhere(
@@ -671,13 +942,23 @@ class FluxProvider extends ChangeNotifier {
           t['track_name'] == currentTrack!['track_name'] &&
           t['artist'] == currentTrack!['artist'],
     );
-    if (currentIndex != -1 && currentIndex < currentQueue.length - 1) {
-      _playFromQueueIndex(currentIndex + 1);
+    if (currentIndex != -1) {
+      if (currentIndex < currentQueue.length - 1) {
+        _playFromQueueIndex(currentIndex + 1);
+      } else if (_repeatMode == PlaybackRepeatMode.all) {
+        _playFromQueueIndex(0);
+      }
     }
   }
 
   void skipPrevious() {
     if (currentTrack == null || currentQueue.isEmpty) return;
+    
+    if (player.position.inSeconds > 3) {
+      player.seek(Duration.zero);
+      return;
+    }
+
     int currentIndex = currentQueue.indexWhere(
       (t) =>
           t['track_name'] == currentTrack!['track_name'] &&
@@ -685,6 +966,10 @@ class FluxProvider extends ChangeNotifier {
     );
     if (currentIndex > 0) {
       _playFromQueueIndex(currentIndex - 1);
+    } else if (_repeatMode == PlaybackRepeatMode.all) {
+      _playFromQueueIndex(currentQueue.length - 1);
+    } else {
+      player.seek(Duration.zero);
     }
   }
 
@@ -692,5 +977,16 @@ class FluxProvider extends ChangeNotifier {
   void dispose() {
     player.dispose();
     super.dispose();
+  }
+
+  MediaItem _createMediaItem(Map<String, String> track) {
+    return MediaItem(
+      id: track['video_id'] ?? track['track_name'] ?? 'unknown',
+      title: track['track_name'] ?? 'Unknown Track',
+      artist: track['artist'] ?? 'Unknown Artist',
+      artUri: (track['album_image_url'] != null && track['album_image_url']!.isNotEmpty) 
+          ? Uri.parse(track['album_image_url']!) 
+          : null,
+    );
   }
 }

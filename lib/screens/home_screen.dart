@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../main.dart';
 import '../providers/flux_provider.dart';
+import '../services/youtube_api_service.dart';
 import 'playlist_detail_screen.dart';
 import 'artist_screen.dart';
 
@@ -18,8 +19,39 @@ const artistColors = [
   Color(0xFF10B981),
 ];
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final YouTubeApiService _ytService = YouTubeApiService();
+  List<Map<String, String>> _trendingTracks = [];
+  bool _isLoadingTrending = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTrending();
+  }
+
+  Future<void> _loadTrending() async {
+    final tracks = await _ytService.fetchTrending();
+    if (mounted) {
+      setState(() {
+        _trendingTracks = tracks;
+        _isLoadingTrending = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ytService.dispose();
+    super.dispose();
+  }
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -71,7 +103,25 @@ class HomeScreen extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // ── 4. Tocadas Recentemente ──
+              // ── 4. Em Alta ──
+              _buildSectionTitle('Em Alta'),
+              const SizedBox(height: 12),
+              if (_isLoadingTrending)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator(color: FluxApp.accentColor)),
+                )
+              else if (_trendingTracks.isNotEmpty)
+                _buildRecentlyPlayed(context, provider, _trendingTracks)
+              else
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text("Não foi possível carregar as tendências.", style: TextStyle(color: FluxApp.secondaryTextColor)),
+                ),
+
+              const SizedBox(height: 24),
+
+              // ── 5. Tocadas Recentemente ──
               _buildSectionTitle('Tocadas Recentemente'),
               const SizedBox(height: 12),
               _buildRecentlyPlayed(context, provider, recentlyPlayed),

@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 9000
 
 # Run the server using Gunicorn for better performance
-CMD ["gunicorn", "--bind", "0.0.0.0:9000", "--workers", "2", "--threads", "4", "server:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:9000", "--workers", "2", "--threads", "4", "--preload", "server:app"]

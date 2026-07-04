@@ -9,8 +9,16 @@ import '../providers/flux_provider.dart';
 import 'playlist_detail_screen.dart';
 import 'dart:io' if (dart.library.html) 'dart_io_stub.dart';
 
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  String _searchQuery = '';
+  String _sortMode = 'A-Z'; // 'A-Z', 'Z-A'
 
   Future<void> _renamePlaylist(
       BuildContext context, String oldName, FluxProvider provider) async {
@@ -207,9 +215,77 @@ class LibraryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = Provider.of<FluxProvider>(context);
 
+    var playlistNames = provider.playlists.keys.toList();
+    if (_searchQuery.isNotEmpty) {
+      playlistNames = playlistNames.where((name) => name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    }
+    
+    playlistNames.sort((a, b) {
+      final aPinned = provider.isPinned(a);
+      final bPinned = provider.isPinned(b);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      
+      if (_sortMode == 'A-Z') {
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      } else {
+        return b.toLowerCase().compareTo(a.toLowerCase());
+      }
+    });
+
     return ListView(
       padding: const EdgeInsets.only(bottom: 100),
       children: [
+        // --- SEARCH BAR AND SORT ---
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: "Buscar playlist...",
+                    hintStyle: const TextStyle(color: FluxApp.secondaryTextColor),
+                    prefixIcon: const Icon(Icons.search, color: FluxApp.secondaryTextColor),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.05),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _sortMode,
+                dropdownColor: FluxApp.cardColor,
+                style: const TextStyle(color: Colors.white),
+                underline: const SizedBox(),
+                icon: const Icon(Icons.sort, color: FluxApp.secondaryTextColor),
+                items: const [
+                  DropdownMenuItem(value: 'A-Z', child: Text('A-Z')),
+                  DropdownMenuItem(value: 'Z-A', child: Text('Z-A')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _sortMode = value;
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+
         // --- ACTION BUTTONS ---
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -259,9 +335,10 @@ class LibraryScreen extends StatelessWidget {
             ),
           )
         else
-          ...provider.playlists.keys.map((name) {
+          ...playlistNames.map((name) {
             final tracks = provider.playlists[name]!;
             final String? imageUrl = provider.getPlaylistCover(name);
+            final isPinned = provider.isPinned(name);
 
             return ListTile(
               contentPadding:
@@ -276,10 +353,19 @@ class LibraryScreen extends StatelessWidget {
                       : const _LibraryPlaceholder(),
                 ),
               ),
-              title: Text(
-                name,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 15),
+              title: Row(
+                children: [
+                  if (isPinned) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.push_pin, size: 14, color: FluxApp.accentColor)),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
               subtitle: Text(
                 "${tracks.length} música${tracks.length != 1 ? 's' : ''}",
@@ -300,15 +386,25 @@ class LibraryScreen extends StatelessWidget {
                     provider.deletePlaylist(name);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text("Playlist '$name' apagada"),
+                        content: Text("Playlist '\$name' apagada"),
                         behavior: SnackBarBehavior.floating,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10)),
                       ),
                     );
+                  } else if (value == 'pin') {
+                    provider.togglePin(name);
                   }
                 },
                 itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'pin',
+                    child: ListTile(
+                      leading: Icon(isPinned ? Icons.push_pin_outlined : Icons.push_pin, size: 20),
+                      title: Text(isPinned ? 'Desafixar' : 'Fixar'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'rename',
                     child: ListTile(
