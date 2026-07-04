@@ -6,6 +6,7 @@ import '../screens/lyrics_view.dart';
 import '../main.dart';
 import 'package:share_plus/share_plus.dart';
 import 'artist_screen.dart';
+import 'queue_screen.dart';
 
 class MusicScreen extends StatelessWidget {
   const MusicScreen({super.key});
@@ -417,84 +418,12 @@ class MusicScreen extends StatelessWidget {
   void _showQueueBottomSheet(BuildContext context, FluxProvider provider) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: FluxApp.backgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Fila de Reprodução",
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    itemCount: provider.currentQueue.length,
-                    onReorder: (oldIndex, newIndex) {
-                      setState(() {
-                        provider.reorderQueue(oldIndex, newIndex);
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      final track = provider.currentQueue[index];
-                      final isPlaying = track['track_name'] == provider.currentTrack?['track_name'] && 
-                                        track['artist'] == provider.currentTrack?['artist'];
-                      return ListTile(
-                        key: ValueKey('${track['track_name']}_${track['artist']}_$index'),
-                        leading: (track['album_image_url'] != null && track['album_image_url']!.isNotEmpty)
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: Image.network(track['album_image_url']!, width: 40, height: 40, fit: BoxFit.cover),
-                              )
-                            : Container(width: 40, height: 40, color: FluxApp.cardColor),
-                        title: Text(
-                          track['track_name'] ?? 'Desconhecido',
-                          style: TextStyle(
-                            color: isPlaying ? FluxApp.accentColor : Colors.white,
-                            fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          track['artist'] ?? 'Desconhecido',
-                          style: TextStyle(color: FluxApp.secondaryTextColor),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: const Icon(Icons.drag_handle, color: FluxApp.secondaryTextColor),
-                        onTap: () {
-                          // Play this track specifically if tapped?
-                          // (Requires playTrack update or skipping until found. We can just skip for now, or just play Track directly but we need to ensure currentQueue handles it properly).
-                          provider.playTrack(track); // this might mess up the queue sequence if playTrack doesn't maintain currentQueue. 
-                          // Actually, playTrack updates currentTrack. And skips will follow.
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
+        return FractionallySizedBox(
+          heightFactor: 0.85,
+          child: QueueScreen(),
         );
       },
     );

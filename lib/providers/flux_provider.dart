@@ -123,6 +123,28 @@ class FluxProvider extends ChangeNotifier {
         }
       }
     });
+
+    player.currentIndexStream.listen((index) {
+      debugPrint("FLUX EVENT: currentIndexStream fired with index $index");
+      if (index != null && index >= 0 && index < currentQueue.length) {
+        final newTrack = currentQueue[index];
+        final isSameTrack = currentTrack != null && 
+                            currentTrack!['track_name'] == newTrack['track_name'] && 
+                            currentTrack!['artist'] == newTrack['artist'];
+        
+        if (!isSameTrack) {
+          debugPrint("FLUX EVENT: Updating currentTrack to ${newTrack['track_name']}");
+          currentTrack = newTrack;
+          _addToRecentlyPlayed(currentTrack!);
+          _updatePalette(currentTrack!['album_image_url']);
+          notifyListeners();
+          _preloadNextTracks(index);
+        } else {
+          // Keep currentTrack reference but trigger UI update just in case
+          notifyListeners();
+        }
+      }
+    });
   }
 
   // --- RECENTLY PLAYED ---
@@ -874,6 +896,49 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
+  // --- QUEUE MANAGEMENT ---
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= currentQueue.length) return;
+    if (newIndex < 0 || newIndex > currentQueue.length) return;
+
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+
+    // Move in local list
+    final track = currentQueue.removeAt(oldIndex);
+    currentQueue.insert(newIndex, track);
+
+    // Move in just_audio source
+    if (_queueSource != null) {
+      try {
+        await _queueSource!.move(oldIndex, newIndex);
+      } catch (e) {
+        debugPrint("FLUX: Error moving track in queue source: $e");
+      }
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    if (index < 0 || index >= currentQueue.length) return;
+
+    // Remove from local list
+    currentQueue.removeAt(index);
+
+    // Remove from just_audio source
+    if (_queueSource != null) {
+      try {
+        await _queueSource!.removeAt(index);
+      } catch (e) {
+        debugPrint("FLUX: Error removing track from queue source: $e");
+      }
+    }
+
+    notifyListeners();
+  }
+
   Future<void> _setAndPlaySource(AudioSource source) async {
     await player.stop();
     await player.setAudioSource(source);
@@ -947,14 +1012,6 @@ class FluxProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void reorderQueue(int oldIndex, int newIndex) {
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
-    final item = currentQueue.removeAt(oldIndex);
-    currentQueue.insert(newIndex, item);
-    notifyListeners();
-  }
 
   bool isFavorite(Map<String, String> track) {
     if (!playlists.containsKey("Favoritas")) return false;
