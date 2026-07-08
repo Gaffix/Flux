@@ -69,53 +69,51 @@ class MusicScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // --- TOP BAR ---
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Stack(
+                  alignment: Alignment.center,
                   children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.lyrics,
-                              color: FluxApp.accentColor, size: 24),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) => const LyricsView()),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.equalizer_rounded,
-                              color: FluxApp.accentColor, size: 24),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) => const EqualizerScreen()),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.timer_outlined,
-                              color: FluxApp.accentColor, size: 24),
-                          onPressed: () => _showSleepTimerDialog(context, provider),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      "TOCANDO AGORA",
-                      style: GoogleFonts.inter(
-                        color: FluxApp.secondaryTextColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.lyrics,
+                                color: FluxApp.accentColor, size: 24),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) => const LyricsView()),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.equalizer_rounded,
+                                color: FluxApp.accentColor, size: 24),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) => const EqualizerScreen()),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.timer_outlined,
+                                color: FluxApp.accentColor, size: 24),
+                            onPressed: () => _showSleepTimerDialog(context, provider),
+                          ),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                          color: Colors.white, size: 30),
-                      onPressed: () => Navigator.pop(context),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                            color: Colors.white, size: 30),
+                        onPressed: () => Navigator.pop(context),
+                      ),
                     ),
                   ],
                 ),
@@ -208,15 +206,77 @@ class MusicScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    IconButton(
-                      icon: Icon(
-                        provider.isFavorite(track) ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                        color: provider.isFavorite(track) ? FluxApp.accentColor : FluxApp.secondaryTextColor,
-                        size: 28,
-                      ),
-                      onPressed: () {
-                        provider.toggleFavorite(track);
-                      },
+                    Row(
+                      children: [
+                        FutureBuilder<bool>(
+                          future: provider.isTrackDownloaded(track),
+                          builder: (context, snapshot) {
+                            final isDownloaded = snapshot.data ?? false;
+                            
+                            final videoId = track['video_id'];
+                            final status = videoId != null ? provider.getTrackStatus(videoId) : "NONE";
+                            final isDownloading = status == "QUEUED" || status == "DOWNLOADING";
+
+                            if (isDownloading) {
+                              return Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                width: 24,
+                                height: 24,
+                                child: const CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: FluxApp.accentColor,
+                                ),
+                              );
+                            }
+
+                            if (isDownloaded) {
+                              return IconButton(
+                                icon: const Icon(Icons.offline_pin_rounded, color: FluxApp.accentColor, size: 28),
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      backgroundColor: FluxApp.cardColor,
+                                      title: const Text("Remover Download", style: TextStyle(color: Colors.white)),
+                                      content: const Text("Deseja remover esta música dos downloads?", style: TextStyle(color: FluxApp.secondaryTextColor)),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: const Text("Cancelar", style: TextStyle(color: FluxApp.secondaryTextColor)),
+                                        ),
+                                        TextButton(
+                                          onPressed: () {
+                                            provider.deleteDownloadedTrack(track);
+                                            Navigator.pop(context);
+                                          },
+                                          child: const Text("Remover", style: TextStyle(color: Colors.redAccent)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            } else {
+                              return IconButton(
+                                icon: const Icon(Icons.download_rounded, color: FluxApp.secondaryTextColor, size: 28),
+                                onPressed: () {
+                                  provider.downloadTrack(track);
+                                },
+                              );
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            provider.isFavorite(track) ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                            color: provider.isFavorite(track) ? FluxApp.accentColor : FluxApp.secondaryTextColor,
+                            size: 28,
+                          ),
+                          onPressed: () {
+                            provider.toggleFavorite(track);
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),

@@ -13,11 +13,13 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/ai_playlist_service.dart';
+import '../services/equalizer_service.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
 class FluxProvider extends ChangeNotifier {
-  final AudioPlayer player = AudioPlayer();
+  late final AudioPlayer player;
+  AndroidEqualizer? androidEqualizer;
 
   String baseUrl = "";
 
@@ -118,8 +120,43 @@ class FluxProvider extends ChangeNotifier {
   Map<String, String> _playlistCovers = {};
 
   bool _playerListenerRegistered = false;
+  EqualizerService? _eqService;
+
+  void attachEqualizerService(EqualizerService eqService) {
+    if (_eqService == eqService) return;
+    
+    _eqService?.removeListener(_applyEqualizerSettings);
+    _eqService = eqService;
+    _eqService?.addListener(_applyEqualizerSettings);
+    
+    _applyEqualizerSettings();
+  }
+
+  Future<void> _applyEqualizerSettings() async {
+    if (androidEqualizer == null || _eqService == null) return;
+    try {
+      final parameters = await androidEqualizer!.parameters;
+      await androidEqualizer!.setEnabled(_eqService!.isEnabled);
+      
+      final bands = _eqService!.currentBands;
+      for (int i = 0; i < bands.length && i < parameters.bands.length; i++) {
+        await parameters.bands[i].setGain(bands[i]);
+      }
+    } catch (e) {
+      debugPrint("FLUX EQ ERROR: $e");
+    }
+  }
 
   FluxProvider() {
+    if (!kIsWeb && Platform.isAndroid) {
+      androidEqualizer = AndroidEqualizer();
+      player = AudioPlayer(
+        audioPipeline: AudioPipeline(androidAudioEffects: [androidEqualizer!]),
+      );
+    } else {
+      player = AudioPlayer();
+    }
+
     _loadFromPrefs();
 
     _loadPlaylistCovers();
@@ -670,6 +707,24 @@ class FluxProvider extends ChangeNotifier {
     return File(localPath).exists();
   }
 
+  Future<void> deleteDownloadedTrack(Map<String, String> track) async {
+    if (kIsWeb) return;
+    try {
+      final localPath = await getDownloadedAudioPath(track);
+      final file = File(localPath);
+      if (await file.exists()) {
+        await file.delete();
+        final videoId = await _resolveVideoId(track);
+        if (videoId != null) {
+          _trackStatuses[videoId] = "NONE";
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("Error deleting track: $e");
+    }
+  }
+
   // --- PLAYLIST MANAGEMENT ---
   void createPlaylist(String name) {
     if (name.isNotEmpty && !playlists.containsKey(name)) {
@@ -1110,7 +1165,7 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _fadeOut({int durationMs = 1500}) async {
+  Future<void> _fadeOut({int durationMs = 500}) async {
     final steps = 15;
     final stepDuration = durationMs ~/ steps;
     for (int i = steps; i >= 0; i--) {
@@ -1119,7 +1174,7 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _fadeIn({int durationMs = 1500}) async {
+  Future<void> _fadeIn({int durationMs = 500}) async {
     final steps = 15;
     final stepDuration = durationMs ~/ steps;
     for (int i = 0; i <= steps; i++) {

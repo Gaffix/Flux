@@ -5,6 +5,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'providers/flux_provider.dart';
 import 'services/equalizer_service.dart';
+import 'services/podcast_service.dart';
 import 'screens/main_page.dart';
 import 'screens/auth_screen.dart';
 
@@ -22,8 +23,12 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => FluxProvider()),
         ChangeNotifierProvider(create: (_) => EqualizerService()),
+        ChangeNotifierProxyProvider<EqualizerService, FluxProvider>(
+          create: (context) => FluxProvider()..attachEqualizerService(Provider.of<EqualizerService>(context, listen: false)),
+          update: (context, eqService, fluxProvider) => fluxProvider!..attachEqualizerService(eqService),
+        ),
+        ChangeNotifierProvider(create: (_) => PodcastService()),
       ],
       child: const FluxApp(),
     ),
