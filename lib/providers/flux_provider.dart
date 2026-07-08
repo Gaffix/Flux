@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/ai_playlist_service.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
@@ -70,6 +71,21 @@ class FluxProvider extends ChangeNotifier {
 
   String _audioQuality = 'normal';
   String get audioQuality => _audioQuality;
+  
+  // --- CROSSFADE ---
+  bool _crossfadeEnabled = false;
+  bool get crossfadeEnabled => _crossfadeEnabled;
+
+  void toggleCrossfade(bool value) {
+    _crossfadeEnabled = value;
+    _saveCrossfadeSetting();
+    notifyListeners();
+  }
+
+  Future<void> _saveCrossfadeSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flux_crossfade', _crossfadeEnabled);
+  }
   
   Color dominantColor = const Color(0xFF1DB954);
 
@@ -155,6 +171,9 @@ class FluxProvider extends ChangeNotifier {
           
           _addToRecentlyPlayed(currentTrack!);
           _updatePalette(currentTrack!['album_image_url']);
+          // Log listening history and broadcast to friends
+          ListeningHistoryService.logListen(currentTrack!);
+          ListeningHistoryService.broadcastNowPlaying(currentTrack!);
           notifyListeners();
         } else {
           // Apenas garanta que a UI atualize caso algo mais tenha mudado (ex: isPlaying state não pegou)
@@ -956,6 +975,20 @@ class FluxProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> addToQueue(Map<String, String> track) async {
+    currentQueue.add(Map<String, String>.from(track));
+
+    if (_queueSource != null) {
+      try {
+        _queueSource!.add(FluxStreamAudioSource(track, this, tag: _createMediaItem(track)));
+      } catch (e) {
+        debugPrint("FLUX: Error adding track to queue source: $e");
+      }
+    }
+
+    notifyListeners();
+  }
+
   Future<void> _setAndPlaySource(AudioSource source) async {
     await player.stop();
     await player.setAudioSource(source);
@@ -1047,21 +1080,51 @@ class FluxProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void skipNext() {
+  Future<void> skipNext() async {
     if (player.hasNext) {
-      player.seekToNext();
+      if (_crossfadeEnabled) {
+        await _fadeOut();
+        await player.seekToNext();
+        await _fadeIn();
+      } else {
+        await player.seekToNext();
+      }
     }
   }
 
-  void skipPrevious() {
+  Future<void> skipPrevious() async {
     if (player.position.inSeconds > 3) {
       player.seek(Duration.zero);
       return;
     }
     if (player.hasPrevious) {
-      player.seekToPrevious();
+      if (_crossfadeEnabled) {
+        await _fadeOut();
+        await player.seekToPrevious();
+        await _fadeIn();
+      } else {
+        await player.seekToPrevious();
+      }
     } else {
       player.seek(Duration.zero);
+    }
+  }
+
+  Future<void> _fadeOut({int durationMs = 1500}) async {
+    final steps = 15;
+    final stepDuration = durationMs ~/ steps;
+    for (int i = steps; i >= 0; i--) {
+      await player.setVolume(i / steps);
+      await Future.delayed(Duration(milliseconds: stepDuration));
+    }
+  }
+
+  Future<void> _fadeIn({int durationMs = 1500}) async {
+    final steps = 15;
+    final stepDuration = durationMs ~/ steps;
+    for (int i = 0; i <= steps; i++) {
+      await player.setVolume(i / steps);
+      await Future.delayed(Duration(milliseconds: stepDuration));
     }
   }
 

@@ -10,6 +10,9 @@ import 'library_screen.dart';
 import 'search_screen.dart';
 import 'auth_screen.dart';
 import 'settings_screen.dart';
+import 'ai_playlist_screen.dart';
+import 'friend_activity_screen.dart';
+import 'equalizer_screen.dart';
 
 
 class MainPage extends StatefulWidget {
@@ -45,6 +48,57 @@ class _MainPageState extends State<MainPage> {
         elevation: 0,
         centerTitle: false,
         actions: [
+          // AI Playlists button
+          IconButton(
+            icon: const Icon(Icons.auto_awesome_rounded, color: FluxApp.accentColor),
+            tooltip: 'AI Playlists',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AIPlaylistScreen()),
+              );
+            },
+          ),
+          // Friend Activity button
+          IconButton(
+            icon: Stack(
+              children: [
+                const Icon(Icons.people_alt_rounded),
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4ADE80),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: FluxApp.backgroundColor, width: 1),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            tooltip: 'Friend Activity',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const FriendActivityScreen()),
+              );
+            },
+          ),
+          // Equalizer button
+          IconButton(
+            icon: const Icon(Icons.equalizer_rounded),
+            tooltip: 'Equalizer',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const EqualizerScreen()),
+              );
+            },
+          ),
+          // Settings button
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {

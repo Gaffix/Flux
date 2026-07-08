@@ -18,7 +18,9 @@ def extract_youtube_audio_info(video_id, quality="normal"):
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
     format_str = 'bestaudio/best'
-    if quality == 'high':
+    if quality == 'lossless':
+        format_str = 'bestaudio[acodec=flac]/bestaudio[acodec=opus]/bestaudio/best'
+    elif quality == 'high':
         format_str = 'bestaudio[abr>128]/bestaudio/best'
     elif quality == 'low':
         format_str = 'worstaudio/worst'

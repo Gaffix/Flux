@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'providers/flux_provider.dart';
+import 'services/equalizer_service.dart';
 import 'screens/main_page.dart';
 import 'screens/auth_screen.dart';
 
@@ -19,8 +20,11 @@ Future<void> main() async {
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmbm1neHdoa3lpbWJsZWpndHJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxMTM1MjcsImV4cCI6MjA5ODY4OTUyN30.bKE7eRCZ32AAym14LKvk2xCWw03EBySz8z8a8YK-TEA',
   );
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => FluxProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => FluxProvider()),
+        ChangeNotifierProvider(create: (_) => EqualizerService()),
+      ],
       child: const FluxApp(),
     ),
   );

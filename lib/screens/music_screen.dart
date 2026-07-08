@@ -7,6 +7,7 @@ import '../main.dart';
 import 'package:share_plus/share_plus.dart';
 import 'artist_screen.dart';
 import 'queue_screen.dart';
+import 'equalizer_screen.dart';
 
 class MusicScreen extends StatelessWidget {
   const MusicScreen({super.key});
@@ -81,6 +82,17 @@ class MusicScreen extends StatelessWidget {
                               context,
                               MaterialPageRoute(
                                   builder: (context) => const LyricsView()),
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.equalizer_rounded,
+                              color: FluxApp.accentColor, size: 24),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => const EqualizerScreen()),
                             );
                           },
                         ),

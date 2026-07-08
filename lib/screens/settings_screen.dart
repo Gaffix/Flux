@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
 import '../providers/flux_provider.dart';
+import '../services/equalizer_service.dart';
 import 'auth_screen.dart';
 import 'friends_screen.dart';
+import 'equalizer_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -207,6 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     DropdownMenuItem(value: 'low', child: Text('Baixa (Economia)')),
                     DropdownMenuItem(value: 'normal', child: Text('Normal (Padrão)')),
                     DropdownMenuItem(value: 'high', child: Text('Alta (Melhor áudio)')),
+                    DropdownMenuItem(value: 'lossless', child: Text('Lossless (FLAC/OPUS)')),
                   ],
                   onChanged: (val) {
                     if (val != null) {
@@ -225,6 +228,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     setState(() => _showTrending = val);
                     Provider.of<FluxProvider>(context, listen: false).toggleShowTrending(val);
                   },
+                ),
+                const SizedBox(height: 12),
+                // Equalizer shortcut
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.equalizer_rounded, color: FluxApp.accentColor),
+                  title: const Text('Equalizer & Audio Effects', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  trailing: const Icon(Icons.chevron_right, color: FluxApp.secondaryTextColor),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const EqualizerScreen()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Crossfade toggle
+                Consumer<FluxProvider>(
+                  builder: (context, provider, _) => SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Crossfade (Transição Suave)', style: TextStyle(color: Colors.white, fontSize: 15)),
+                    subtitle: const Text('Faz uma transição de volume entre músicas', style: TextStyle(color: FluxApp.secondaryTextColor, fontSize: 12)),
+                    value: provider.crossfadeEnabled,
+                    activeColor: FluxApp.accentColor,
+                    onChanged: (val) {
+                      provider.toggleCrossfade(val);
+                    },
+                  ),
                 ),
               ],
             ),
