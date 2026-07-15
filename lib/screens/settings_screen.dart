@@ -16,7 +16,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late TextEditingController _urlController;
   late TextEditingController _usernameController;
   late String _selectedQuality;
   late bool _isPublic;
@@ -26,7 +25,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     final provider = Provider.of<FluxProvider>(context, listen: false);
-    _urlController = TextEditingController(text: provider.baseUrl);
     _usernameController = TextEditingController(text: provider.username);
     _selectedQuality = provider.audioQuality;
     _isPublic = provider.isPublic;
@@ -35,14 +33,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
-    _urlController.dispose();
     _usernameController.dispose();
     super.dispose();
   }
 
   void _saveSettings() {
     final provider = Provider.of<FluxProvider>(context, listen: false);
-    provider.setBaseUrl(_urlController.text.trim());
     provider.setAudioQuality(_selectedQuality);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Configurações salvas!')),
@@ -156,7 +152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // SEÇÃO: TÉCNICO
           const Text(
-            'TÉCNICO / SERVIDOR',
+            'ÁUDIO / PLAYER',
             style: TextStyle(
               color: FluxApp.accentColor,
               fontWeight: FontWeight.bold,
@@ -174,23 +170,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Servidor Ngrok', style: TextStyle(color: FluxApp.secondaryTextColor, fontSize: 13)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _urlController,
-                  decoration: InputDecoration(
-                    hintText: 'https://xxx.ngrok.app',
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.05),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  style: const TextStyle(color: FluxApp.primaryTextColor),
-                  onChanged: (_) => _saveSettings(), // Autosave
-                ),
-                const SizedBox(height: 20),
                 const Text('Qualidade de Áudio', style: TextStyle(color: FluxApp.secondaryTextColor, fontSize: 13)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(

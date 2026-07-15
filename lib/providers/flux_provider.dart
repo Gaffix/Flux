@@ -21,7 +21,7 @@ class FluxProvider extends ChangeNotifier {
   late final AudioPlayer player;
   AndroidEqualizer? androidEqualizer;
 
-  String baseUrl = "";
+  final YoutubeExplode _yt = YoutubeExplode();
 
   // --- DOWNLOAD QUEUE ---
   final Queue<Map<String, String>> _downloadQueue = Queue();
@@ -492,7 +492,6 @@ class FluxProvider extends ChangeNotifier {
     if (streamUrl == null) throw Exception("URL não encontrada");
 
     final request = http.Request('GET', Uri.parse(streamUrl));
-    request.headers['ngrok-skip-browser-warning'] = 'true';
 
     final response = await http.Client().send(request);
     final total = response.contentLength ?? 0;
@@ -584,7 +583,7 @@ class FluxProvider extends ChangeNotifier {
       }
     }
     
-    baseUrl = prefs.getString('flux_server_url') ?? "";
+    // baseUrl removed — youtube_explode_dart handles everything locally
     _audioQuality = prefs.getString('flux_audio_quality') ?? 'normal';
     _showTrending = prefs.getBool('flux_show_trending') ?? true;
     
@@ -601,12 +600,7 @@ class FluxProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setBaseUrl(String url) async {
-    baseUrl = url;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('flux_server_url', url);
-    notifyListeners();
-  }
+  // setBaseUrl removed — no longer needed with local youtube_explode_dart
 
   Future<void> toggleShowTrending(bool value) async {
     _showTrending = value;
@@ -864,57 +858,51 @@ class FluxProvider extends ChangeNotifier {
     String? videoId = track['video_id'];
     if (videoId != null && videoId.isNotEmpty) return videoId;
 
-    if (baseUrl.isEmpty) {
-      debugPrint("FLUX: baseUrl is empty. Configure o servidor para buscar IDs.");
-      return null;
-    }
-
-    debugPrint("FLUX: Missing video_id. Searching using Python backend...");
+    debugPrint("FLUX: Missing video_id. Searching with youtube_explode_dart...");
     try {
       final query = "${track['track_name']} ${track['artist']} audio";
-      final searchUrl = "$baseUrl/search?q=${Uri.encodeComponent(query)}";
-      final response = await http.get(
-        Uri.parse(searchUrl),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        videoId = data['video_id']?.toString();
-        if (videoId != null) {
-           track['video_id'] = videoId;
-           saveToPrefs();
-        }
-      } else {
-        debugPrint("FLUX: Backend search returned status code ${response.statusCode}");
+      final searchResults = await _yt.search.search(query);
+      final firstVideo = searchResults.whereType<Video>().firstOrNull;
+      if (firstVideo != null) {
+        videoId = firstVideo.id.value;
+        track['video_id'] = videoId;
+        saveToPrefs();
       }
     } catch (e) {
-      debugPrint("FLUX: Backend search error: $e");
+      debugPrint("FLUX: youtube_explode search error: $e");
     }
     return videoId;
   }
 
   Future<String?> _fetchStreamUrl(String videoId) async {
-    if (baseUrl.isEmpty) {
-      debugPrint("FLUX: baseUrl is empty. Configure o servidor.");
-      return null;
-    }
-    
     try {
-      final serverUrl = "$baseUrl/get_audio?id=$videoId&quality=$_audioQuality";
-      final response = await http.get(
-        Uri.parse(serverUrl),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
+      final manifest = await _yt.videos.streamsClient.getManifest(VideoId(videoId));
+      final audioStreams = manifest.audioOnly.sortByBitrate();
       
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['url']?.toString();
-      } else {
-        debugPrint("FLUX: Server returned status code ${response.statusCode}");
+      if (audioStreams.isEmpty) {
+        debugPrint("FLUX: No audio streams found for $videoId");
+        return null;
       }
+
+      // Select stream based on quality preference
+      AudioStreamInfo selected;
+      switch (_audioQuality) {
+        case 'lossless':
+        case 'high':
+          selected = audioStreams.last; // highest bitrate
+          break;
+        case 'low':
+          selected = audioStreams.first; // lowest bitrate
+          break;
+        default: // 'normal'
+          selected = audioStreams[audioStreams.length ~/ 2]; // middle bitrate
+          break;
+      }
+
+      debugPrint("FLUX: Selected stream: ${selected.bitrate}, codec: ${selected.codec}");
+      return selected.url.toString();
     } catch (e) {
-      debugPrint("FLUX: Error fetching from Python server: $e");
+      debugPrint("FLUX: Error fetching stream via youtube_explode: $e");
     }
     return null;
   }
@@ -1236,7 +1224,6 @@ class FluxStreamAudioSource extends StreamAudioSource {
     if (start != null || end != null) {
       request.headers['Range'] = 'bytes=${start ?? 0}-${end ?? ''}';
     }
-    request.headers['ngrok-skip-browser-warning'] = 'true';
 
     final response = await http.Client().send(request);
     return StreamAudioResponse(

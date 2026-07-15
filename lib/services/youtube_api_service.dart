@@ -1,30 +1,18 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class YouTubeApiService {
-  Future<String> _getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Use localhost fallback for development
-    return prefs.getString('server_url') ?? 'http://127.0.0.1:9000';
-  }
+  final YoutubeExplode _yt = YoutubeExplode();
 
   Future<List<Map<String, String>>> fetchTrending() async {
     try {
-      final baseUrl = await _getBaseUrl();
-      final response = await http.get(Uri.parse('$baseUrl/trending'));
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map<Map<String, String>>((video) => <String, String>{
-          "track_name": video["title"]?.toString() ?? "Desconhecido",
-          "artist": video["channel"]?.toString() ?? "Desconhecido",
-          "album_image_url": "https://i.ytimg.com/vi/${video['video_id']}/hqdefault.jpg",
-          "video_id": video["video_id"]?.toString() ?? "",
-        }).toList();
-      } else {
-        print("Erro no backend ao buscar trending: ${response.statusCode}");
-      }
+      final searchResults = await _yt.search.search('Top Hits Music 2024 audio',
+          filter: TypeFilters.video);
+      return searchResults.whereType<Video>().map<Map<String, String>>((video) => <String, String>{
+        "track_name": video.title,
+        "artist": video.author,
+        "album_image_url": video.thumbnails.lowResUrl,
+        "video_id": video.id.value,
+      }).toList();
     } catch (e) {
       print("Erro ao buscar trending: $e");
     }
@@ -33,21 +21,14 @@ class YouTubeApiService {
 
   Future<List<Map<String, String>>> fetchByGenre(String genre) async {
     try {
-      final baseUrl = await _getBaseUrl();
-      final query = Uri.encodeComponent("$genre hits 2024");
-      final response = await http.get(Uri.parse('$baseUrl/trending?q=$query'));
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map<Map<String, String>>((video) => <String, String>{
-          "track_name": video["title"]?.toString() ?? "Desconhecido",
-          "artist": video["channel"]?.toString() ?? "Desconhecido",
-          "album_image_url": "https://i.ytimg.com/vi/${video['video_id']}/hqdefault.jpg",
-          "video_id": video["video_id"]?.toString() ?? "",
-        }).toList();
-      } else {
-        print("Erro no backend ao buscar gênero: ${response.statusCode}");
-      }
+      final searchResults = await _yt.search.search('$genre hits 2024 audio',
+          filter: TypeFilters.video);
+      return searchResults.whereType<Video>().map<Map<String, String>>((video) => <String, String>{
+        "track_name": video.title,
+        "artist": video.author,
+        "album_image_url": video.thumbnails.lowResUrl,
+        "video_id": video.id.value,
+      }).toList();
     } catch (e) {
       print("Erro ao buscar gênero $genre: $e");
     }
@@ -55,6 +36,6 @@ class YouTubeApiService {
   }
 
   void dispose() {
-    // No longer needed
+    _yt.close();
   }
 }
