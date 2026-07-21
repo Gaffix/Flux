@@ -10,7 +10,6 @@ import 'library_screen.dart';
 import 'search_screen.dart';
 import 'auth_screen.dart';
 import 'settings_screen.dart';
-import 'ai_playlist_screen.dart';
 import 'friend_activity_screen.dart';
 import 'equalizer_screen.dart';
 
@@ -48,17 +47,7 @@ class _MainPageState extends State<MainPage> {
         elevation: 0,
         centerTitle: false,
         actions: [
-          // AI Playlists button
-          IconButton(
-            icon: const Icon(Icons.auto_awesome_rounded, color: FluxApp.accentColor),
-            tooltip: 'AI Playlists',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AIPlaylistScreen()),
-              );
-            },
-          ),
+
           // Friend Activity button
           IconButton(
             icon: Stack(

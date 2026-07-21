@@ -328,26 +328,50 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 },
               ),
               if (!kIsWeb)
-                ListTile(
-                  leading: const Icon(Icons.download_rounded, color: FluxApp.accentColor),
-                  title: const Text('Baixar música'),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text("Baixando ${track['track_name']}..."),
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    );
-                    bool success = await provider.downloadTrack(track);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(success ? "Download concluído!" : "Erro ao baixar."),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
+                FutureBuilder<bool>(
+                  future: provider.isTrackDownloaded(track),
+                  builder: (context, snapshot) {
+                    final isDownloaded = snapshot.data ?? false;
+                    if (isDownloaded) {
+                      return ListTile(
+                        leading: const Icon(Icons.offline_pin_rounded, color: FluxApp.accentColor),
+                        title: const Text('Remover Download'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          provider.deleteDownloadedTrack(track);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text("Download removido!"),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          );
+                        },
+                      );
+                    } else {
+                      return ListTile(
+                        leading: const Icon(Icons.download_rounded, color: FluxApp.accentColor),
+                        title: const Text('Baixar música'),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("Baixando ${track['track_name']}..."),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          );
+                          bool success = await provider.downloadTrack(track);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(success ? "Download concluído!" : "Erro ao baixar."),
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            );
+                          }
+                        },
                       );
                     }
                   },

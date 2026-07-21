@@ -243,20 +243,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 12),
-                // Crossfade toggle
-                Consumer<FluxProvider>(
-                  builder: (context, provider, _) => SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Crossfade (Transição Suave)', style: TextStyle(color: Colors.white, fontSize: 15)),
-                    subtitle: const Text('Faz uma transição de volume entre músicas', style: TextStyle(color: FluxApp.secondaryTextColor, fontSize: 12)),
-                    value: provider.crossfadeEnabled,
-                    activeColor: FluxApp.accentColor,
-                    onChanged: (val) {
-                      provider.toggleCrossfade(val);
-                    },
-                  ),
-                ),
+
               ],
             ),
           ),

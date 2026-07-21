@@ -5,11 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../main.dart';
 import '../providers/flux_provider.dart';
 import '../services/youtube_api_service.dart';
-import '../services/ai_playlist_service.dart';
+import '../services/listening_history_service.dart';
 import 'playlist_detail_screen.dart';
 import 'artist_screen.dart';
-import 'ai_playlist_screen.dart';
-import 'podcast_screen.dart';
 import 'equalizer_screen.dart';
 
 const artistColors = [
@@ -99,11 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               _buildPlaylistGrid(context, provider, playlists),
               const SizedBox(height: 24),
-
-              // ── 2.5 Feito para Você ──
-              _buildSectionTitle('Feito para Você'),
               const SizedBox(height: 12),
-              _buildMadeForYou(context),
 
               // Only add spacing if artists section will also show
               if (artists.isNotEmpty) const SizedBox(height: 24),
@@ -153,30 +147,6 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           _QuickActionChip(
-            icon: Icons.auto_awesome_rounded,
-            label: 'AI Playlists',
-            color: const Color(0xFF8B5CF6),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AIPlaylistScreen()),
-              );
-            },
-          ),
-          const SizedBox(width: 12),
-          _QuickActionChip(
-            icon: Icons.podcasts_rounded,
-            label: 'Podcasts',
-            color: const Color(0xFFF59E0B),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PodcastScreen()),
-              );
-            },
-          ),
-          const SizedBox(width: 12),
-          _QuickActionChip(
             icon: Icons.equalizer_rounded,
             label: 'Equalizer',
             color: const Color(0xFF06B6D4),
@@ -192,83 +162,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMadeForYou(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _MadeForYouCard(
-            title: 'Daily Mix',
-            subtitle: 'Baseado no que você ouve',
-            icon: Icons.auto_awesome,
-            colors: const [Color(0xFF8B5CF6), Color(0xFF3B82F6)],
-            onTap: () => _playDailyMix(context),
-          ),
-          const SizedBox(width: 16),
-          _MadeForYouCard(
-            title: 'AI DJ',
-            subtitle: 'O seu DJ pessoal',
-            icon: Icons.headphones_rounded,
-            colors: const [Color(0xFFF59E0B), Color(0xFFEF4444)],
-            onTap: () => _startAiDj(context),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _playDailyMix(BuildContext context) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: FluxApp.accentColor),
-      ),
-    );
-
-    try {
-      final topArtists = await ListeningHistoryService.getTopArtists(limit: 5);
-      final seedArtists = topArtists.map((a) => a['artist'].toString()).toList();
-      
-      // Fallback seeds if history is empty
-      if (seedArtists.isEmpty) {
-        seedArtists.addAll(['The Weeknd', 'Dua Lipa', 'Coldplay']);
-      }
-
-      final aiService = AIPlaylistService();
-      final mix = await aiService.generateDailyMix(seedArtists: seedArtists);
-      aiService.dispose();
-
-      if (mounted) {
-        Navigator.pop(context); // Close dialog
-        if (mix.isNotEmpty) {
-          final provider = Provider.of<FluxProvider>(context, listen: false);
-          provider.playPlaylist(mix, shuffle: true);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Não foi possível gerar seu Daily Mix agora.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _startAiDj(BuildContext context) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('O AI DJ está aquecendo as picapes! Em breve...'),
-        backgroundColor: FluxApp.accentColor,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
 
   Widget _buildSectionTitle(String title) {
     return Text(
@@ -615,86 +508,3 @@ class _QuickActionChip extends StatelessWidget {
   }
 }
 
-class _MadeForYouCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final List<Color> colors;
-  final VoidCallback onTap;
-
-  const _MadeForYouCard({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.colors,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 160,
-        height: 160,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: colors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: colors.first.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -16,
-              bottom: -16,
-              child: Icon(
-                icon,
-                size: 96,
-                color: Colors.white.withOpacity(0.15),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Icon(icon, color: Colors.white, size: 28),
-                  const Spacer(),
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 12,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

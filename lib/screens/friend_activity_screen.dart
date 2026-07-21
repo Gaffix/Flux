@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
 import '../providers/flux_provider.dart';
-import '../services/ai_playlist_service.dart';
+import '../services/listening_history_service.dart';
 
 class FriendActivityScreen extends StatefulWidget {
   const FriendActivityScreen({super.key});

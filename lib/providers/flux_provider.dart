@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
+import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -12,7 +13,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/ai_playlist_service.dart';
+import '../services/listening_history_service.dart';
 import '../services/equalizer_service.dart';
 
 enum PlaybackRepeatMode { off, all, one }
@@ -73,21 +74,7 @@ class FluxProvider extends ChangeNotifier {
 
   String _audioQuality = 'normal';
   String get audioQuality => _audioQuality;
-  
-  // --- CROSSFADE ---
-  bool _crossfadeEnabled = false;
-  bool get crossfadeEnabled => _crossfadeEnabled;
 
-  void toggleCrossfade(bool value) {
-    _crossfadeEnabled = value;
-    _saveCrossfadeSetting();
-    notifyListeners();
-  }
-
-  Future<void> _saveCrossfadeSetting() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('flux_crossfade', _crossfadeEnabled);
-  }
   
   Color dominantColor = const Color(0xFF1DB954);
 
@@ -1137,13 +1124,7 @@ class FluxProvider extends ChangeNotifier {
 
   Future<void> skipNext() async {
     if (player.hasNext) {
-      if (_crossfadeEnabled) {
-        await _fadeOut();
-        await player.seekToNext();
-        await _fadeIn();
-      } else {
-        await player.seekToNext();
-      }
+      await player.seekToNext();
     }
   }
 
@@ -1153,35 +1134,12 @@ class FluxProvider extends ChangeNotifier {
       return;
     }
     if (player.hasPrevious) {
-      if (_crossfadeEnabled) {
-        await _fadeOut();
-        await player.seekToPrevious();
-        await _fadeIn();
-      } else {
-        await player.seekToPrevious();
-      }
+      await player.seekToPrevious();
     } else {
       player.seek(Duration.zero);
     }
   }
 
-  Future<void> _fadeOut({int durationMs = 500}) async {
-    final steps = 15;
-    final stepDuration = durationMs ~/ steps;
-    for (int i = steps; i >= 0; i--) {
-      await player.setVolume(i / steps);
-      await Future.delayed(Duration(milliseconds: stepDuration));
-    }
-  }
-
-  Future<void> _fadeIn({int durationMs = 500}) async {
-    final steps = 15;
-    final stepDuration = durationMs ~/ steps;
-    for (int i = 0; i <= steps; i++) {
-      await player.setVolume(i / steps);
-      await Future.delayed(Duration(milliseconds: stepDuration));
-    }
-  }
 
   @override
   void dispose() {
