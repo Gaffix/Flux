@@ -88,10 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 20),
 
-              // ── 1.5 Quick Actions ──
-              _buildQuickActions(context),
-              const SizedBox(height: 24),
-
               // ── 2. Suas Playlists ──
               _buildSectionTitle('Suas Playlists'),
               const SizedBox(height: 12),
@@ -140,28 +136,6 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-
-  Widget _buildQuickActions(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _QuickActionChip(
-            icon: Icons.equalizer_rounded,
-            label: 'Equalizer',
-            color: const Color(0xFF06B6D4),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const EqualizerScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
 
   Widget _buildSectionTitle(String title) {
     return Text(
@@ -460,50 +434,6 @@ class _PlaylistPlaceholder extends StatelessWidget {
     return Container(
       color: FluxApp.accentColor.withValues(alpha: 0.3),
       child: const Icon(Icons.music_note, color: FluxApp.accentColor),
-    );
-  }
-}
-
-class _QuickActionChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionChip({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
