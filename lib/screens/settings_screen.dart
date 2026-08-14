@@ -44,9 +44,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final provider = Provider.of<FluxProvider>(context, listen: false);
     provider.setBaseUrl(_urlController.text.trim());
     provider.setAudioQuality(_selectedQuality);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Configurações salvas!')),
-    );
   }
 
   Future<void> _signOut() async {

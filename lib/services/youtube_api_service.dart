@@ -6,7 +6,7 @@ class YouTubeApiService {
   Future<String> _getBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
     // Use localhost fallback for development
-    return prefs.getString('server_url') ?? 'http://127.0.0.1:9000';
+    return prefs.getString('flux_server_url') ?? 'http://127.0.0.1:9000';
   }
 
   Future<List<Map<String, String>>> fetchTrending() async {

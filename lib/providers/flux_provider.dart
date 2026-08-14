@@ -13,6 +13,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/listening_history_service.dart';
 import '../services/equalizer_service.dart';
 
@@ -30,6 +32,9 @@ class FluxProvider extends ChangeNotifier {
   final Map<String, ValueNotifier<double>> _progressNotifiers = {};
   final int _maxConcurrent = 3;
   final Map<String, String> _trackStatuses = {};
+  
+  int _totalGlobalDownloads = 0;
+  int _completedGlobalDownloads = 0;
 
   ValueNotifier<double>? getProgress(String videoId) => _progressNotifiers[videoId];
   String getTrackStatus(String videoId) => _trackStatuses[videoId] ?? "NONE";
@@ -56,6 +61,23 @@ class FluxProvider extends ChangeNotifier {
     _sleepTimer = null;
     _sleepTimerEndTime = null;
     notifyListeners();
+  }
+
+  // --- NOW PLAYING HEARTBEAT ---
+  Timer? _nowPlayingHeartbeat;
+
+  void _startHeartbeat() {
+    _nowPlayingHeartbeat?.cancel();
+    _nowPlayingHeartbeat = Timer.periodic(const Duration(minutes: 2), (_) {
+      if (currentTrack != null && player.playing) {
+        ListeningHistoryService.broadcastNowPlaying(currentTrack!);
+      }
+    });
+  }
+
+  void _stopHeartbeat() {
+    _nowPlayingHeartbeat?.cancel();
+    _nowPlayingHeartbeat = null;
   }
 
   // --- CORE STATE ---
@@ -148,6 +170,15 @@ class FluxProvider extends ChangeNotifier {
 
     _loadPlaylistCovers();
     _registerPlayerListener();
+
+    // Listen to playing state to manage heartbeat
+    player.playingStream.listen((isPlaying) {
+      if (isPlaying && currentTrack != null) {
+        _startHeartbeat();
+      } else {
+        _stopHeartbeat();
+      }
+    });
   }
 
   void _registerPlayerListener() {
@@ -404,6 +435,10 @@ class FluxProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = json.encode(playlists);
     await prefs.setString('flux_data', jsonString);
+    // Also persist social data locally for offline access
+    await prefs.setString('flux_username', username);
+    await prefs.setBool('flux_is_public', isPublic);
+    await prefs.setString('flux_friends', json.encode(friends));
     
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
@@ -438,6 +473,15 @@ class FluxProvider extends ChangeNotifier {
 
     _trackStatuses[videoId] = "QUEUED";
     _downloadQueue.add(track);
+    _totalGlobalDownloads++;
+    
+    if (_totalGlobalDownloads == 1) {
+      _completedGlobalDownloads = 0;
+      await _updateDownloadNotification('Preparando Download', 'Iniciando...', 0, 0);
+    } else {
+      await _updateDownloadNotification('Baixando Músicas', '$_completedGlobalDownloads de $_totalGlobalDownloads concluídas', _completedGlobalDownloads, _totalGlobalDownloads);
+    }
+    
     notifyListeners();
     _processNextDownload();
   }
@@ -465,6 +509,23 @@ class FluxProvider extends ChangeNotifier {
       _activeDownloads.remove(videoId);
       _progressNotifiers[videoId]?.dispose();
       _progressNotifiers.remove(videoId);
+      
+      _completedGlobalDownloads++;
+      
+      if (_downloadQueue.isNotEmpty || _activeDownloads.isNotEmpty) {
+        final percentage = ((_completedGlobalDownloads / _totalGlobalDownloads) * 100).toInt();
+        await _updateDownloadNotification(
+          'Baixando Músicas', 
+          '$_completedGlobalDownloads de $_totalGlobalDownloads concluídas ($percentage%)', 
+          _completedGlobalDownloads, 
+          _totalGlobalDownloads
+        );
+      } else {
+        await _stopForegroundAndShowCompletion('Download Concluído', '$_completedGlobalDownloads músicas baixadas com sucesso.');
+        _totalGlobalDownloads = 0;
+        _completedGlobalDownloads = 0;
+      }
+      
       notifyListeners();
       _processNextDownload(); // Tenta o próximo da fila
     }
@@ -482,6 +543,10 @@ class FluxProvider extends ChangeNotifier {
     request.headers['ngrok-skip-browser-warning'] = 'true';
 
     final response = await http.Client().send(request);
+    if (response.statusCode != 200) {
+      throw Exception("Falha no download. Status: ${response.statusCode}");
+    }
+
     final total = response.contentLength ?? 0;
     int received = 0;
 
@@ -493,6 +558,11 @@ class FluxProvider extends ChangeNotifier {
         _progressNotifiers[videoId]?.value = received / total;
       }
     }
+    
+    if (bytes.isEmpty) {
+      throw Exception("Arquivo vazio (0 bytes).");
+    }
+    
     await file.writeAsBytes(bytes);
   }
 
@@ -522,42 +592,12 @@ class FluxProvider extends ChangeNotifier {
 
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final user = Supabase.instance.client.auth.currentUser;
 
-    String? savedData;
-
-    if (user != null) {
+    // ── STEP 1: Load everything from local storage FIRST (instant, works offline) ──
+    final String? localData = prefs.getString('flux_data');
+    if (localData != null) {
       try {
-        final response = await Supabase.instance.client
-            .from('user_data')
-            .select('playlists_json, username, is_public, friends')
-            .eq('user_id', user.id)
-            .maybeSingle();
-        
-        if (response != null) {
-          if (response['playlists_json'] != null) {
-            savedData = json.encode(response['playlists_json']);
-            await prefs.setString('flux_data', savedData);
-          }
-          username = response['username']?.toString() ?? "";
-          isPublic = response['is_public'] ?? false;
-          final friendsData = response['friends'];
-          if (friendsData != null && friendsData is List) {
-            friends = List<String>.from(friendsData);
-          }
-        }
-      } catch (e) {
-        debugPrint("FLUX: Error fetching from Supabase: $e");
-      }
-    }
-
-    if (savedData == null) {
-      savedData = prefs.getString('flux_data');
-    }
-
-    if (savedData != null) {
-      try {
-        Map<String, dynamic> decoded = json.decode(savedData);
+        Map<String, dynamic> decoded = json.decode(localData);
         playlists = decoded.map((key, value) {
           return MapEntry(
             key,
@@ -567,18 +607,102 @@ class FluxProvider extends ChangeNotifier {
           );
         });
       } catch (e) {
-        debugPrint("Erro ao carregar dados: $e");
+        debugPrint("Erro ao carregar dados locais: $e");
       }
     }
-    
+
+    // Load locally persisted social data
+    username = prefs.getString('flux_username') ?? "";
+    isPublic = prefs.getBool('flux_is_public') ?? false;
+    final String? friendsJson = prefs.getString('flux_friends');
+    if (friendsJson != null) {
+      try {
+        friends = List<String>.from(json.decode(friendsJson));
+      } catch (_) {}
+    }
+
     baseUrl = prefs.getString('flux_server_url') ?? "";
     _audioQuality = prefs.getString('flux_audio_quality') ?? 'normal';
     _showTrending = prefs.getBool('flux_show_trending') ?? true;
-    
+
     await _loadRecentlyPlayed();
     await _loadShuffleMode();
     await _loadPinnedPlaylists();
-    notifyListeners();
+    notifyListeners(); // UI renders instantly with local data
+
+    // ── STEP 2: Sync from Supabase in the background (if online) ──
+    _syncFromSupabase(prefs);
+  }
+
+  Future<void> _syncFromSupabase(SharedPreferences prefs) async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await Supabase.instance.client
+          .from('user_data')
+          .select('playlists_json, username, is_public, friends')
+          .eq('user_id', user.id)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 8));
+
+      if (response == null) return;
+
+      bool hasChanges = false;
+
+      if (response['playlists_json'] != null) {
+        final cloudData = json.encode(response['playlists_json']);
+        final localData = prefs.getString('flux_data');
+        if (cloudData != localData) {
+          await prefs.setString('flux_data', cloudData);
+          try {
+            Map<String, dynamic> decoded = json.decode(cloudData);
+            playlists = decoded.map((key, value) {
+              return MapEntry(
+                key,
+                (value as List)
+                    .map((item) => Map<String, String>.from(item))
+                    .toList(),
+              );
+            });
+            hasChanges = true;
+          } catch (e) {
+            debugPrint("FLUX: Error parsing cloud playlists: $e");
+          }
+        }
+      }
+
+      final cloudUsername = response['username']?.toString() ?? "";
+      if (cloudUsername.isNotEmpty && cloudUsername != username) {
+        username = cloudUsername;
+        await prefs.setString('flux_username', username);
+        hasChanges = true;
+      }
+
+      final cloudIsPublic = response['is_public'] ?? false;
+      if (cloudIsPublic != isPublic) {
+        isPublic = cloudIsPublic;
+        await prefs.setBool('flux_is_public', isPublic);
+        hasChanges = true;
+      }
+
+      final friendsData = response['friends'];
+      if (friendsData != null && friendsData is List) {
+        final cloudFriends = List<String>.from(friendsData);
+        if (cloudFriends.toString() != friends.toString()) {
+          friends = cloudFriends;
+          await prefs.setString('flux_friends', json.encode(friends));
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        debugPrint("FLUX: Synced new data from Supabase");
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("FLUX: Background Supabase sync failed (offline?): $e");
+    }
   }
 
   Future<void> setAudioQuality(String quality) async {
@@ -666,16 +790,6 @@ class FluxProvider extends ChangeNotifier {
   Future<String> getDownloadedAudioPath(Map<String, String> track) async {
     if (kIsWeb) return "";
 
-    Directory? directory;
-
-    if (Platform.isAndroid) {
-      directory = await getExternalStorageDirectory();
-    } else {
-      directory = await getApplicationDocumentsDirectory();
-    }
-
-    directory ??= await getApplicationDocumentsDirectory();
-
     final safeTrackName = (track['track_name'] ?? 'track').replaceAll(
       RegExp(r'[\\/:*?"<>|]'),
       '',
@@ -684,8 +798,32 @@ class FluxProvider extends ChangeNotifier {
       RegExp(r'[\\/:*?"<>|]'),
       '',
     );
+    final fileName = '$safeTrackName - $safeArtist.mp3';
 
-    return '${directory.path}/$safeTrackName - $safeArtist.mp3';
+    if (Platform.isAndroid) {
+      // Check both general storage and the new audio-specific permission for Android 13+
+      var storageStatus = await Permission.storage.request();
+      var audioStatus = await Permission.audio.request();
+
+      if (storageStatus.isGranted || audioStatus.isGranted) {
+        final fluxDir = Directory('/storage/emulated/0/Music/Flux');
+        if (!await fluxDir.exists()) {
+          await fluxDir.create(recursive: true);
+        }
+        return '${fluxDir.path}/$fileName';
+      }
+    }
+
+    // Fallback to internal app data if permissions are denied
+    Directory? directory;
+    if (Platform.isAndroid) {
+      directory = await getExternalStorageDirectory();
+    } else {
+      directory = await getApplicationDocumentsDirectory();
+    }
+    directory ??= await getApplicationDocumentsDirectory();
+
+    return '${directory.path}/$fileName';
   }
 
   Future<bool> isTrackDownloaded(Map<String, String> track) async {
@@ -810,10 +948,79 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
+  // --- NOTIFICATION SETUP ---
+  final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
+  bool _notificationsInitialized = false;
+
+  Future<void> _initNotifications() async {
+    if (_notificationsInitialized) return;
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
+    const InitializationSettings initSettings = InitializationSettings(android: androidSettings);
+    await _notificationsPlugin.initialize(settings: initSettings);
+    _notificationsInitialized = true;
+  }
+
+  Future<void> _updateDownloadNotification(String title, String body, int current, int total) async {
+    await _initNotifications();
+    
+    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'download_channel',
+      'Downloads',
+      channelDescription: 'Progresso de downloads',
+      importance: Importance.low, 
+      priority: Priority.low,
+      onlyAlertOnce: true,
+      showProgress: total > 0,
+      maxProgress: total > 0 ? total : 0,
+      progress: current,
+      ongoing: true, // Keep it from being swiped away
+    );
+
+    if (Platform.isAndroid) {
+      // Run as Foreground Service to keep isolate alive
+      await _notificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.startForegroundService(
+        id: 888, 
+        title: title,
+        body: body,
+        notificationDetails: androidDetails,
+        payload: 'download',
+      );
+    } else {
+      await _notificationsPlugin.show(
+        id: 888, 
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(android: androidDetails),
+      );
+    }
+  }
+
+  Future<void> _stopForegroundAndShowCompletion(String title, String body) async {
+    if (Platform.isAndroid) {
+      await _notificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.stopForegroundService();
+    }
+    
+    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'download_channel',
+      'Downloads',
+      channelDescription: 'Progresso de downloads',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+    );
+    
+    await _notificationsPlugin.show(
+      id: 889, // Different ID so it doesn't overwrite the stopping foreground service instantly
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(android: androidDetails),
+    );
+  }
+
   // --- DOWNLOAD LOGIC (native only) ---
+
   Future<bool> downloadTrack(Map<String, String> track) async {
     if (kIsWeb) return false;
-    await enqueueDownload(track); // Apenas coloca na fila
+    await enqueueDownload(track);
     return true;
   }
 
@@ -823,26 +1030,14 @@ class FluxProvider extends ChangeNotifier {
 
     final tracks = List<Map<String, String>>.from(playlists[playlistName]!);
     final int total = tracks.length;
-    int completed = 0;
 
     debugPrint("FLUX: Starting download of '$playlistName' ($total tracks)");
 
-    const int batchSize = 5;
-
-    for (int i = 0; i < total; i += batchSize) {
-      final end = (i + batchSize < total) ? i + batchSize : total;
-      final batch = tracks.sublist(i, end);
-
-      await Future.wait(
-        batch.map((track) async {
-          await downloadTrack(track);
-          completed++;
-          debugPrint("FLUX: Download progress $completed/$total");
-        }),
-      );
+    for (var track in tracks) {
+      await enqueueDownload(track);
     }
-
-    debugPrint("FLUX: Download of '$playlistName' complete.");
+    
+    debugPrint("FLUX: All tracks from '$playlistName' queued.");
   }
 
   // --- THE CORE PLAYBACK ENGINE ---
@@ -916,12 +1111,12 @@ class FluxProvider extends ChangeNotifier {
       AudioSource? source;
       if (!kIsWeb) {
         final localPath = await getDownloadedAudioPath(track);
-        // We do a sync check if we can, but exists() is async. 
-        // A better approach is to assume StreamAudioSource and fallback, or just do the exists check.
-        // For performance, we'll just use FluxStreamAudioSource which handles local paths too if we make it smart!
-        // Actually, let's just use FluxStreamAudioSource for remote, and check file existence inside it!
+        if (await File(localPath).exists()) {
+          source = AudioSource.uri(Uri.file(localPath), tag: _createMediaItem(track));
+        }
       }
-      children.add(FluxStreamAudioSource(track, this, tag: _createMediaItem(track)));
+      source ??= FluxStreamAudioSource(track, this, tag: _createMediaItem(track));
+      children.add(source);
     }
 
     _queueSource = ConcatenatingAudioSource(children: children);
@@ -1143,6 +1338,8 @@ class FluxProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _nowPlayingHeartbeat?.cancel();
+    _sleepTimer?.cancel();
     player.dispose();
     super.dispose();
   }

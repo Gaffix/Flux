@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../main.dart';
@@ -101,74 +102,80 @@ class _MainPageState extends State<MainPage> {
       ),
       body: _widgetOptions.elementAt(_selectedIndex),
       bottomSheet: const MiniPlayerBar(),
-      bottomNavigationBar: SafeArea(
-        bottom: true,
-        child: Container(
-          padding: const EdgeInsets.only(bottom: 8.0, top: 4.0),
-          decoration: BoxDecoration(
-            color: const Color(0xFF181818),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 15,
-                offset: const Offset(0, -5),
+      bottomNavigationBar: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF181818).withOpacity(0.7),
+              border: Border(
+                top: BorderSide(
+                  color: Colors.white.withOpacity(0.06),
+                  width: 0.5,
+                ),
               ),
-            ],
-          ),
-          // O Theme aqui remove as animações exageradas de clique (Ripple)
-          child: Theme(
-            data: Theme.of(context).copyWith(
-              splashFactory: NoSplash.splashFactory, // Remove a onda
-              highlightColor: Colors.transparent, // Remove o brilho
             ),
-            child: BottomNavigationBar(
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              enableFeedback: false, // Desativa sons/vibrações
-              items: const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(
-                  icon: Padding(
-                    padding: EdgeInsets.only(bottom: 4.0),
-                    child: Icon(Icons.home_outlined),
+            child: SafeArea(
+              bottom: true,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 4.0, top: 4.0),
+                // O Theme aqui remove as animações exageradas de clique (Ripple)
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    splashFactory: NoSplash.splashFactory, // Remove a onda
+                    highlightColor: Colors.transparent, // Remove o brilho
                   ),
-                  activeIcon: Padding(
-                    padding: EdgeInsets.only(bottom: 4.0),
-                    child: Icon(Icons.home),
+                  child: BottomNavigationBar(
+                    elevation: 0,
+                    backgroundColor: Colors.transparent,
+                    enableFeedback: false, // Desativa sons/vibrações
+                    items: const <BottomNavigationBarItem>[
+                      BottomNavigationBarItem(
+                        icon: Padding(
+                          padding: EdgeInsets.only(bottom: 4.0),
+                          child: Icon(Icons.home_outlined),
+                        ),
+                        activeIcon: Padding(
+                          padding: EdgeInsets.only(bottom: 4.0),
+                          child: Icon(Icons.home),
+                        ),
+                        label: 'Home',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Padding(
+                          padding: EdgeInsets.only(bottom: 4.0),
+                          child: Icon(Icons.search),
+                        ),
+                        label: 'Search',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Padding(
+                          padding: EdgeInsets.only(bottom: 4.0),
+                          child: Icon(Icons.library_music_outlined),
+                        ),
+                        activeIcon: Padding(
+                          padding: EdgeInsets.only(bottom: 4.0),
+                          child: Icon(Icons.library_music),
+                        ),
+                        label: 'Library',
+                      ),
+                    ],
+                    currentIndex: _selectedIndex,
+                    selectedItemColor: FluxApp.accentColor,
+                    unselectedItemColor: FluxApp.secondaryTextColor,
+                    selectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w400,
+                      fontSize: 12,
+                    ),
+                    onTap: (index) => setState(() => _selectedIndex = index),
+                    type: BottomNavigationBarType.fixed,
                   ),
-                  label: 'Home',
                 ),
-                BottomNavigationBarItem(
-                  icon: Padding(
-                    padding: EdgeInsets.only(bottom: 4.0),
-                    child: Icon(Icons.search),
-                  ),
-                  label: 'Search',
-                ),
-                BottomNavigationBarItem(
-                  icon: Padding(
-                    padding: EdgeInsets.only(bottom: 4.0),
-                    child: Icon(Icons.library_music_outlined),
-                  ),
-                  activeIcon: Padding(
-                    padding: EdgeInsets.only(bottom: 4.0),
-                    child: Icon(Icons.library_music),
-                  ),
-                  label: 'Library',
-                ),
-              ],
-              currentIndex: _selectedIndex,
-              selectedItemColor: FluxApp.accentColor,
-              unselectedItemColor: FluxApp.secondaryTextColor,
-              selectedLabelStyle: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
               ),
-              unselectedLabelStyle: const TextStyle(
-                fontWeight: FontWeight.w400,
-                fontSize: 12,
-              ),
-              onTap: (index) => setState(() => _selectedIndex = index),
-              type: BottomNavigationBarType.fixed,
             ),
           ),
         ),

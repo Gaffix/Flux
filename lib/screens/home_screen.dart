@@ -9,6 +9,7 @@ import '../services/listening_history_service.dart';
 import 'playlist_detail_screen.dart';
 import 'artist_screen.dart';
 import 'equalizer_screen.dart';
+import 'wrapped_landing_screen.dart';
 
 const artistColors = [
   Color(0xFF6366F1),
@@ -32,11 +33,14 @@ class _HomeScreenState extends State<HomeScreen> {
   final YouTubeApiService _ytService = YouTubeApiService();
   List<Map<String, String>> _trendingTracks = [];
   bool _isLoadingTrending = true;
+  List<Map<String, String>> _recommendations = [];
+  bool _isLoadingRecommendations = true;
 
   @override
   void initState() {
     super.initState();
     _loadTrending();
+    _loadRecommendations();
   }
 
   Future<void> _loadTrending() async {
@@ -46,6 +50,48 @@ class _HomeScreenState extends State<HomeScreen> {
         _trendingTracks = tracks;
         _isLoadingTrending = false;
       });
+    }
+  }
+
+  Future<void> _loadRecommendations() async {
+    try {
+      final topArtists = await ListeningHistoryService.getTopArtists(limit: 5);
+      if (topArtists.isEmpty) {
+        if (mounted) setState(() => _isLoadingRecommendations = false);
+        return;
+      }
+
+      final recs = <Map<String, String>>[];
+      final seenTitles = <String>{};
+
+      for (final artistData in topArtists.take(3)) {
+        final artistName = artistData['artist']?.toString() ?? '';
+        if (artistName.isEmpty) continue;
+
+        final tracks = await _ytService.fetchByGenre(
+          '$artistName popular songs',
+        );
+
+        for (final track in tracks) {
+          final title = track['track_name'] ?? '';
+          if (title.isNotEmpty && !seenTitles.contains(title.toLowerCase())) {
+            seenTitles.add(title.toLowerCase());
+            recs.add(track);
+          }
+          if (recs.length >= 15) break;
+        }
+        if (recs.length >= 15) break;
+      }
+
+      if (mounted) {
+        setState(() {
+          _recommendations = recs;
+          _isLoadingRecommendations = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("FLUX: Error loading recommendations: $e");
+      if (mounted) setState(() => _isLoadingRecommendations = false);
     }
   }
 
@@ -78,13 +124,48 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── 1. Greeting Header ──
-              Text(
-                _getGreeting(),
-                style: GoogleFonts.inter(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _getGreeting(),
+                    style: GoogleFonts.inter(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const WrappedLandingScreen()));
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.purple.shade700, Colors.pink.shade600],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+                          const SizedBox(width: 6),
+                          Text(
+                            "Wrapped",
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
 
@@ -106,6 +187,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
 
               const SizedBox(height: 24),
+
+              // ── 3.5. Feito para Você (Recommendations) ──
+              if (!_isLoadingRecommendations && _recommendations.isNotEmpty) ...[
+                _buildSectionTitle('Feito para Você ✨'),
+                const SizedBox(height: 12),
+                _buildRecommendationsRow(context, provider),
+                const SizedBox(height: 24),
+              ],
 
               // ── 4. Em Alta ──
               if (provider.showTrending) ...[
@@ -422,6 +511,151 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         );
       },
+    );
+  }
+
+  // ── Recommendations Horizontal Cards ──
+  Widget _buildRecommendationsRow(BuildContext context, FluxProvider provider) {
+    return SizedBox(
+      height: 180,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _recommendations.length,
+        itemBuilder: (context, index) {
+          final track = _recommendations[index];
+          final trackName = track['track_name'] ?? '';
+          final artist = track['artist'] ?? '';
+          final albumArt = track['album_image_url'] ?? '';
+
+          return GestureDetector(
+            onTap: () {
+              provider.currentQueue = List.from(_recommendations);
+              provider.playTrack(track);
+            },
+            child: Container(
+              width: 150,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Album art background
+                  albumArt.isNotEmpty
+                      ? Image.network(
+                          albumArt,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  artistColors[index % artistColors.length],
+                                  artistColors[index % artistColors.length]
+                                      .withOpacity(0.5),
+                                ],
+                              ),
+                            ),
+                            child: const Icon(Icons.music_note,
+                                color: Colors.white54, size: 40),
+                          ),
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                artistColors[index % artistColors.length],
+                                artistColors[index % artistColors.length]
+                                    .withOpacity(0.5),
+                              ],
+                            ),
+                          ),
+                          child: const Icon(Icons.music_note,
+                              color: Colors.white54, size: 40),
+                        ),
+                  // Gradient overlay for text readability
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.8),
+                          ],
+                          stops: const [0.0, 0.4, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Track info at bottom
+                  Positioned(
+                    bottom: 10,
+                    left: 10,
+                    right: 10,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          trackName,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          artist,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.white70,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Play icon overlay
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
