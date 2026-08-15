@@ -30,11 +30,12 @@ class FluxProvider extends ChangeNotifier {
   final Queue<Map<String, String>> _downloadQueue = Queue();
   final Set<String> _activeDownloads = {};
   final Map<String, ValueNotifier<double>> _progressNotifiers = {};
-  final int _maxConcurrent = 3;
+  final int _maxConcurrent = 5;
   final Map<String, String> _trackStatuses = {};
   
   int _totalGlobalDownloads = 0;
   int _completedGlobalDownloads = 0;
+  bool _isBatchQueueing = false;
 
   ValueNotifier<double>? getProgress(String videoId) => _progressNotifiers[videoId];
   String getTrackStatus(String videoId) => _trackStatuses[videoId] ?? "NONE";
@@ -42,15 +43,22 @@ class FluxProvider extends ChangeNotifier {
   // --- SLEEP TIMER ---
   Timer? _sleepTimer;
   DateTime? _sleepTimerEndTime;
+  bool _stopAfterCurrentTrack = false;
 
   DateTime? get sleepTimerEndTime => _sleepTimerEndTime;
+  bool get isStoppingAfterCurrentTrack => _stopAfterCurrentTrack;
 
-  void startSleepTimer(Duration duration) {
+  void startSleepTimer(Duration duration, {bool stopAtEnd = false}) {
     _sleepTimer?.cancel();
+    _stopAfterCurrentTrack = false;
     _sleepTimerEndTime = DateTime.now().add(duration);
     _sleepTimer = Timer(duration, () {
-      player.stop();
-      _sleepTimerEndTime = null;
+      if (stopAtEnd) {
+        _stopAfterCurrentTrack = true;
+      } else {
+        player.stop();
+        _sleepTimerEndTime = null;
+      }
       notifyListeners();
     });
     notifyListeners();
@@ -60,6 +68,7 @@ class FluxProvider extends ChangeNotifier {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepTimerEndTime = null;
+    _stopAfterCurrentTrack = false;
     notifyListeners();
   }
 
@@ -80,6 +89,10 @@ class FluxProvider extends ChangeNotifier {
     _nowPlayingHeartbeat = null;
   }
 
+  // --- PLAYLISTS ---
+  List<String> _collaborativePlaylists = [];
+  List<String> get collaborativePlaylists => _collaborativePlaylists;
+
   // --- CORE STATE ---
   Map<String, String>? currentTrack;
   List<Map<String, String>> currentQueue = [];
@@ -87,16 +100,37 @@ class FluxProvider extends ChangeNotifier {
   
   // --- USER PROFILE ---
   String username = "";
-  bool isPublic = false;
+  String avatarUrl = "";
+  bool isPublic = true;
   List<String> friends = [];
   
   // --- SETTINGS ---
   bool _showTrending = true;
   bool get showTrending => _showTrending;
 
+  bool _crossfadeEnabled = false;
+  bool get crossfadeEnabled => _crossfadeEnabled;
+
   String _audioQuality = 'normal';
   String get audioQuality => _audioQuality;
 
+  double _playbackSpeed = 1.0;
+  double get playbackSpeed => _playbackSpeed;
+
+  double _playbackPitch = 1.0;
+  double get playbackPitch => _playbackPitch;
+
+  Future<void> setPlaybackSpeed(double speed) async {
+    _playbackSpeed = speed;
+    await player.setSpeed(speed);
+    notifyListeners();
+  }
+
+  Future<void> setPlaybackPitch(double pitch) async {
+    _playbackPitch = pitch;
+    await player.setPitch(pitch);
+    notifyListeners();
+  }
   
   Color dominantColor = const Color(0xFF1DB954);
 
@@ -181,11 +215,32 @@ class FluxProvider extends ChangeNotifier {
     });
   }
 
+  bool _isFadingOutForCrossfade = false;
+
   void _registerPlayerListener() {
     if (_playerListenerRegistered) return;
     _playerListenerRegistered = true;
+    
+    player.positionStream.listen((pos) {
+      if (player.duration != null && _crossfadeEnabled && player.playing) {
+        final remaining = player.duration! - pos;
+        if (remaining.inSeconds <= 4 && !_isFadingOutForCrossfade) {
+          _isFadingOutForCrossfade = true;
+          _performFadeOut(4); // fade out over 4 seconds
+        }
+      }
+    });
+
     player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
+        if (_stopAfterCurrentTrack) {
+          _stopAfterCurrentTrack = false;
+          _sleepTimerEndTime = null;
+          player.stop();
+          notifyListeners();
+          return;
+        }
+
         if (_repeatMode != PlaybackRepeatMode.one) {
           skipNext();
         } else {
@@ -218,6 +273,13 @@ class FluxProvider extends ChangeNotifier {
           // The notification is perfectly in sync because it uses the MediaItem tag.
           // We must use the exact same data to guarantee the UI is in sync.
           currentTrack = newTrack;
+          _isFadingOutForCrossfade = false;
+          
+          if (_crossfadeEnabled) {
+            _performFadeIn(3); // fade in over 3 seconds
+          } else {
+            player.setVolume(1.0);
+          }
           
           final index = sequenceState.currentIndex;
           if (index != null && index >= 0 && index < currentQueue.length) {
@@ -439,6 +501,7 @@ class FluxProvider extends ChangeNotifier {
     await prefs.setString('flux_username', username);
     await prefs.setBool('flux_is_public', isPublic);
     await prefs.setString('flux_friends', json.encode(friends));
+    await prefs.setString('flux_avatar_url', avatarUrl);
     
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
@@ -449,6 +512,7 @@ class FluxProvider extends ChangeNotifier {
           'username': username,
           'is_public': isPublic,
           'friends': friends,
+          'avatar_url': avatarUrl,
         }, onConflict: 'user_id');
       } catch (e) {
         debugPrint("FLUX: Error syncing to Supabase: $e");
@@ -457,22 +521,31 @@ class FluxProvider extends ChangeNotifier {
   }
 
   Future<void> enqueueDownload(Map<String, String> track) async {
-    final videoId = await _resolveVideoId(track);
-    if (videoId == null) return;
-
     if (await isTrackDownloaded(track)) {
-      _trackStatuses[videoId] = "DOWNLOADED";
-      notifyListeners();
+      String vid = track['video_id'] ?? '';
+      if (vid.isNotEmpty) {
+        _trackStatuses[vid] = "DOWNLOADED";
+        notifyListeners();
+      }
       return;
     }
 
-    if (_activeDownloads.contains(videoId) ||
-        _downloadQueue.any((t) => t['video_id'] == videoId)) {
-      return; // Já está na fila ou baixando
+    if (_downloadQueue.any((t) => t['track_name'] == track['track_name'] && t['artist'] == track['artist'])) {
+      return; // Já está na fila
+    }
+
+    String videoId = track['video_id'] ?? '';
+    if (videoId.isEmpty) {
+      videoId = "pending_${track['track_name']}";
+      track['video_id'] = videoId;
+    }
+
+    if (_activeDownloads.contains(videoId)) {
+      return;
     }
 
     _trackStatuses[videoId] = "QUEUED";
-    _downloadQueue.add(track);
+    _downloadQueue.add(Map<String, String>.from(track));
     _totalGlobalDownloads++;
     
     if (_totalGlobalDownloads == 1) {
@@ -492,7 +565,28 @@ class FluxProvider extends ChangeNotifier {
     }
 
     final track = _downloadQueue.removeFirst();
-    final videoId = track['video_id']!;
+    String videoId = track['video_id']!;
+
+    if (videoId.startsWith("pending_")) {
+      _activeDownloads.add(videoId);
+      _trackStatuses[videoId] = "RESOLVING";
+      notifyListeners();
+
+      final realVideoId = await _resolveVideoId(track);
+      
+      _activeDownloads.remove(videoId);
+      _trackStatuses.remove(videoId);
+
+      if (realVideoId == null) {
+        _completedGlobalDownloads++;
+        _checkAndCompleteGlobalDownload();
+        _processNextDownload();
+        return;
+      }
+      
+      videoId = realVideoId;
+      track['video_id'] = videoId;
+    }
 
     _activeDownloads.add(videoId);
     _trackStatuses[videoId] = "DOWNLOADING";
@@ -512,22 +606,26 @@ class FluxProvider extends ChangeNotifier {
       
       _completedGlobalDownloads++;
       
-      if (_downloadQueue.isNotEmpty || _activeDownloads.isNotEmpty) {
-        final percentage = ((_completedGlobalDownloads / _totalGlobalDownloads) * 100).toInt();
-        await _updateDownloadNotification(
-          'Baixando Músicas', 
-          '$_completedGlobalDownloads de $_totalGlobalDownloads concluídas ($percentage%)', 
-          _completedGlobalDownloads, 
-          _totalGlobalDownloads
-        );
-      } else {
-        await _stopForegroundAndShowCompletion('Download Concluído', '$_completedGlobalDownloads músicas baixadas com sucesso.');
-        _totalGlobalDownloads = 0;
-        _completedGlobalDownloads = 0;
-      }
+      await _checkAndCompleteGlobalDownload();
       
       notifyListeners();
       _processNextDownload(); // Tenta o próximo da fila
+    }
+  }
+
+  Future<void> _checkAndCompleteGlobalDownload() async {
+    if (_downloadQueue.isNotEmpty || _activeDownloads.isNotEmpty || _isBatchQueueing) {
+      final percentage = _totalGlobalDownloads > 0 ? ((_completedGlobalDownloads / _totalGlobalDownloads) * 100).toInt() : 0;
+      await _updateDownloadNotification(
+        'Baixando Músicas', 
+        '$_completedGlobalDownloads de $_totalGlobalDownloads concluídas ($percentage%)', 
+        _completedGlobalDownloads, 
+        _totalGlobalDownloads
+      );
+    } else {
+      await _stopForegroundAndShowCompletion('Download Concluído', '$_completedGlobalDownloads músicas baixadas com sucesso.');
+      _totalGlobalDownloads = 0;
+      _completedGlobalDownloads = 0;
     }
   }
 
@@ -536,34 +634,61 @@ class FluxProvider extends ChangeNotifier {
     final savePath = await getDownloadedAudioPath(track);
     final file = File(savePath);
 
-    final streamUrl = await _fetchStreamUrl(videoId);
-    if (streamUrl == null) throw Exception("URL não encontrada");
+    final yt = YoutubeExplode();
+    Stream<List<int>> audioStream;
+    int totalBytes = 0;
 
-    final request = http.Request('GET', Uri.parse(streamUrl));
-    request.headers['ngrok-skip-browser-warning'] = 'true';
+    try {
+      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      final streamInfo = manifest.audioOnly.withHighestBitrate();
+      audioStream = yt.videos.streamsClient.get(streamInfo);
+      totalBytes = streamInfo.size.totalBytes;
+    } catch (e) {
+      debugPrint("FLUX: YoutubeExplode failed to get stream, trying backend: $e");
+      
+      // Fallback for backend
+      final streamUrl = await _fetchStreamUrl(videoId);
+      if (streamUrl == null) {
+        yt.close();
+        throw Exception("URL não encontrada no backend");
+      }
 
-    final response = await http.Client().send(request);
-    if (response.statusCode != 200) {
-      throw Exception("Falha no download. Status: ${response.statusCode}");
+      final request = http.Request('GET', Uri.parse(streamUrl));
+      request.headers['ngrok-skip-browser-warning'] = 'true';
+
+      final response = await http.Client().send(request).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) {
+        yt.close();
+        throw Exception("Falha no download. Status: ${response.statusCode}");
+      }
+      
+      audioStream = response.stream;
+      totalBytes = response.contentLength ?? 0;
     }
 
-    final total = response.contentLength ?? 0;
+    final sink = file.openWrite();
+    bool hasData = false;
     int received = 0;
 
-    final bytes = <int>[];
-    await for (var chunk in response.stream) {
-      bytes.addAll(chunk);
-      received += chunk.length;
-      if (total > 0) {
-        _progressNotifiers[videoId]?.value = received / total;
+    try {
+      await for (var chunk in audioStream) {
+        hasData = true;
+        sink.add(chunk);
+        received += chunk.length;
+        if (totalBytes > 0) {
+          _progressNotifiers[videoId]?.value = received / totalBytes;
+        }
       }
+    } finally {
+      await sink.flush();
+      await sink.close();
+      yt.close();
     }
     
-    if (bytes.isEmpty) {
+    if (!hasData) {
+      if (await file.exists()) await file.delete();
       throw Exception("Arquivo vazio (0 bytes).");
     }
-    
-    await file.writeAsBytes(bytes);
   }
 
   // --- IMPORT PLAYLIST ---
@@ -612,8 +737,9 @@ class FluxProvider extends ChangeNotifier {
     }
 
     // Load locally persisted social data
-    username = prefs.getString('flux_username') ?? "";
-    isPublic = prefs.getBool('flux_is_public') ?? false;
+    username = prefs.getString('flux_username') ?? "Usuário";
+    avatarUrl = prefs.getString('flux_avatar_url') ?? "";
+    isPublic = prefs.getBool('flux_is_public') ?? true;
     final String? friendsJson = prefs.getString('flux_friends');
     if (friendsJson != null) {
       try {
@@ -624,6 +750,8 @@ class FluxProvider extends ChangeNotifier {
     baseUrl = prefs.getString('flux_server_url') ?? "";
     _audioQuality = prefs.getString('flux_audio_quality') ?? 'normal';
     _showTrending = prefs.getBool('flux_show_trending') ?? true;
+    _crossfadeEnabled = prefs.getBool('flux_crossfade_enabled') ?? false;
+    _collaborativePlaylists = prefs.getStringList('flux_collaborative_playlists') ?? [];
 
     await _loadRecentlyPlayed();
     await _loadShuffleMode();
@@ -726,8 +854,23 @@ class FluxProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> toggleCrossfade(bool value) async {
+    _crossfadeEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flux_crossfade_enabled', value);
+    notifyListeners();
+  }
+
   Future<void> updateUsername(String newUsername) async {
     username = newUsername;
+    await saveToPrefs();
+    notifyListeners();
+  }
+
+  Future<void> updateAvatarUrl(String newUrl) async {
+    avatarUrl = newUrl;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('flux_avatar_url', newUrl);
     await saveToPrefs();
     notifyListeners();
   }
@@ -801,11 +944,18 @@ class FluxProvider extends ChangeNotifier {
     final fileName = '$safeTrackName - $safeArtist.mp3';
 
     if (Platform.isAndroid) {
-      // Check both general storage and the new audio-specific permission for Android 13+
-      var storageStatus = await Permission.storage.request();
-      var audioStatus = await Permission.audio.request();
+      bool hasPermission = await Permission.storage.isGranted || await Permission.audio.isGranted;
+      if (!hasPermission) {
+        try {
+          await Permission.storage.request();
+          await Permission.audio.request();
+          hasPermission = await Permission.storage.isGranted || await Permission.audio.isGranted;
+        } catch (e) {
+          debugPrint("FLUX: Concurrent permission request ignored: $e");
+        }
+      }
 
-      if (storageStatus.isGranted || audioStatus.isGranted) {
+      if (hasPermission) {
         final fluxDir = Directory('/storage/emulated/0/Music/Flux');
         if (!await fluxDir.exists()) {
           await fluxDir.create(recursive: true);
@@ -848,6 +998,73 @@ class FluxProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error deleting track: $e");
     }
+  }
+
+  Future<String> calculateStorageSpace() async {
+    if (kIsWeb) return "0 MB";
+    int totalBytes = 0;
+    
+    // Check Music/Flux directory
+    if (Platform.isAndroid) {
+      final fluxDir = Directory('/storage/emulated/0/Music/Flux');
+      if (await fluxDir.exists()) {
+        await for (var file in fluxDir.list(recursive: true)) {
+          if (file is File) totalBytes += await file.length();
+        }
+      }
+    }
+    
+    // Check app docs directory
+    Directory? directory;
+    if (Platform.isAndroid) {
+      directory = await getExternalStorageDirectory();
+    } else {
+      directory = await getApplicationDocumentsDirectory();
+    }
+    directory ??= await getApplicationDocumentsDirectory();
+    
+    if (await directory.exists()) {
+      await for (var file in directory.list(recursive: true)) {
+        if (file is File && file.path.endsWith('.mp3')) {
+          totalBytes += await file.length();
+        }
+      }
+    }
+
+    if (totalBytes == 0) return "0 MB";
+    return "${(totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB";
+  }
+
+  Future<void> clearAllDownloads() async {
+    if (kIsWeb) return;
+    
+    if (Platform.isAndroid) {
+      final fluxDir = Directory('/storage/emulated/0/Music/Flux');
+      if (await fluxDir.exists()) {
+        await for (var file in fluxDir.list(recursive: true)) {
+          if (file is File) await file.delete();
+        }
+      }
+    }
+    
+    Directory? directory;
+    if (Platform.isAndroid) {
+      directory = await getExternalStorageDirectory();
+    } else {
+      directory = await getApplicationDocumentsDirectory();
+    }
+    directory ??= await getApplicationDocumentsDirectory();
+    
+    if (await directory.exists()) {
+      await for (var file in directory.list(recursive: true)) {
+        if (file is File && file.path.endsWith('.mp3')) {
+          await file.delete();
+        }
+      }
+    }
+
+    _trackStatuses.clear();
+    notifyListeners();
   }
 
   // --- PLAYLIST MANAGEMENT ---
@@ -1033,8 +1250,18 @@ class FluxProvider extends ChangeNotifier {
 
     debugPrint("FLUX: Starting download of '$playlistName' ($total tracks)");
 
+    _isBatchQueueing = true;
     for (var track in tracks) {
       await enqueueDownload(track);
+    }
+    _isBatchQueueing = false;
+    
+    // Se todos os downloads já acabaram enquanto enfileirava
+    if (_downloadQueue.isEmpty && _activeDownloads.isEmpty && _totalGlobalDownloads > 0) {
+      await _stopForegroundAndShowCompletion('Download Concluído', '$_completedGlobalDownloads músicas baixadas com sucesso.');
+      _totalGlobalDownloads = 0;
+      _completedGlobalDownloads = 0;
+      notifyListeners();
     }
     
     debugPrint("FLUX: All tracks from '$playlistName' queued.");
@@ -1044,79 +1271,120 @@ class FluxProvider extends ChangeNotifier {
 
   Future<String?> _resolveVideoId(Map<String, String> track) async {
     String? videoId = track['video_id'];
-    if (videoId != null && videoId.isNotEmpty) return videoId;
+    if (videoId != null && videoId.isNotEmpty && !videoId.startsWith("pending_")) return videoId;
 
-    if (baseUrl.isEmpty) {
-      debugPrint("FLUX: baseUrl is empty. Configure o servidor para buscar IDs.");
-      return null;
+    debugPrint("FLUX: Missing video_id. Searching...");
+    try {
+      final yt = YoutubeExplode();
+      final query = "${track['track_name']} ${track['artist']} audio";
+      final searchResults = await yt.search.search(query);
+      if (searchResults.isNotEmpty) {
+        videoId = searchResults.first.id.value;
+        track['video_id'] = videoId!;
+        saveToPrefs();
+      }
+      yt.close();
+      if (videoId != null) return videoId;
+    } catch (e) {
+      debugPrint("FLUX: YoutubeExplode search error: $e");
     }
 
-    debugPrint("FLUX: Missing video_id. Searching using Python backend...");
-    try {
-      final query = "${track['track_name']} ${track['artist']} audio";
-      final searchUrl = "$baseUrl/search?q=${Uri.encodeComponent(query)}";
-      final response = await http.get(
-        Uri.parse(searchUrl),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        videoId = data['video_id']?.toString();
-        if (videoId != null) {
-           track['video_id'] = videoId;
-           saveToPrefs();
+    if (baseUrl.isNotEmpty) {
+      try {
+        final query = "${track['track_name']} ${track['artist']} audio";
+        final searchUrl = "$baseUrl/search?q=${Uri.encodeComponent(query)}";
+        final response = await http.get(
+          Uri.parse(searchUrl),
+          headers: {'ngrok-skip-browser-warning': 'true'},
+        ).timeout(const Duration(seconds: 10));
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          videoId = data['video_id']?.toString();
+          if (videoId != null) {
+             track['video_id'] = videoId;
+             saveToPrefs();
+          }
         }
-      } else {
-        debugPrint("FLUX: Backend search returned status code ${response.statusCode}");
+      } catch (e) {
+        debugPrint("FLUX: Backend search error: $e");
       }
-    } catch (e) {
-      debugPrint("FLUX: Backend search error: $e");
     }
     return videoId;
   }
 
   Future<String?> _fetchStreamUrl(String videoId) async {
-    if (baseUrl.isEmpty) {
-      debugPrint("FLUX: baseUrl is empty. Configure o servidor.");
-      return null;
+    try {
+      final yt = YoutubeExplode();
+      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      final streamInfo = manifest.audioOnly.withHighestBitrate();
+      final url = streamInfo.url.toString();
+      yt.close();
+      return url;
+    } catch (e) {
+      debugPrint("FLUX: YoutubeExplode stream error: $e");
+    }
+
+    if (baseUrl.isNotEmpty) {
+      try {
+        final serverUrl = "$baseUrl/get_audio?id=$videoId&quality=$_audioQuality";
+        final response = await http.get(
+          Uri.parse(serverUrl),
+          headers: {'ngrok-skip-browser-warning': 'true'},
+        ).timeout(const Duration(seconds: 15));
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          return data['url']?.toString();
+        } else {
+          debugPrint("FLUX: Server returned status code ${response.statusCode}");
+        }
+      } catch (e) {
+        debugPrint("FLUX: Error fetching from Python server: $e");
+      }
     }
     
-    try {
-      final serverUrl = "$baseUrl/get_audio?id=$videoId&quality=$_audioQuality";
-      final response = await http.get(
-        Uri.parse(serverUrl),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      );
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['url']?.toString();
-      } else {
-        debugPrint("FLUX: Server returned status code ${response.statusCode}");
-      }
-    } catch (e) {
-      debugPrint("FLUX: Error fetching from Python server: $e");
-    }
     return null;
   }
 
   ConcatenatingAudioSource? _queueSource;
+
+  Future<void> _performFadeOut(int seconds) async {
+    int steps = seconds * 10; // 10 steps per second
+    double stepSize = 1.0 / steps;
+    double currentVolume = player.volume;
+
+    for (int i = 0; i < steps; i++) {
+      if (!_isFadingOutForCrossfade) break;
+      currentVolume -= stepSize;
+      if (currentVolume < 0.0) currentVolume = 0.0;
+      await player.setVolume(currentVolume);
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  Future<void> _performFadeIn(int seconds) async {
+    int steps = seconds * 10;
+    double stepSize = 1.0 / steps;
+    double currentVolume = 0.0;
+    await player.setVolume(currentVolume);
+
+    for (int i = 0; i < steps; i++) {
+      if (_isFadingOutForCrossfade) break;
+      currentVolume += stepSize;
+      if (currentVolume > 1.0) currentVolume = 1.0;
+      await player.setVolume(currentVolume);
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    await player.setVolume(1.0); // Ensure it reaches max
+  }
 
   Future<void> _playFromQueueIndex(int index) async {
     if (index < 0 || index >= currentQueue.length) return;
 
     final children = <AudioSource>[];
     for (var track in currentQueue) {
-      AudioSource? source;
-      if (!kIsWeb) {
-        final localPath = await getDownloadedAudioPath(track);
-        if (await File(localPath).exists()) {
-          source = AudioSource.uri(Uri.file(localPath), tag: _createMediaItem(track));
-        }
-      }
-      source ??= FluxStreamAudioSource(track, this, tag: _createMediaItem(track));
-      children.add(source);
+      children.add(FluxStreamAudioSource(track, this, tag: _createMediaItem(track)));
     }
 
     _queueSource = ConcatenatingAudioSource(children: children);
@@ -1248,6 +1516,17 @@ class FluxProvider extends ChangeNotifier {
     await _playFromQueueIndex(index);
   }
 
+  void toggleCollaborativePlaylist(String name) async {
+    if (_collaborativePlaylists.contains(name)) {
+      _collaborativePlaylists.remove(name);
+    } else {
+      _collaborativePlaylists.add(name);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('flux_collaborative_playlists', _collaborativePlaylists);
+    notifyListeners();
+  }
+
   void playPlaylist(List<Map<String, String>> tracks, {bool shuffle = false}) {
     if (tracks.isEmpty) return;
 
@@ -1335,6 +1614,21 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> togglePlayPause() async {
+    if (player.playing) {
+      final currentVol = player.volume;
+      const int steps = 10;
+      for (int i = 1; i <= steps; i++) {
+        await Future.delayed(const Duration(milliseconds: 30));
+        await player.setVolume(currentVol * (1 - (i / steps)));
+      }
+      await player.pause();
+      await player.setVolume(currentVol);
+    } else {
+      player.play();
+    }
+  }
+
 
   @override
   void dispose() {
@@ -1391,6 +1685,7 @@ class FluxStreamAudioSource extends StreamAudioSource {
     if (start != null || end != null) {
       request.headers['Range'] = 'bytes=${start ?? 0}-${end ?? ''}';
     }
+    request.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36';
     request.headers['ngrok-skip-browser-warning'] = 'true';
 
     final response = await http.Client().send(request);

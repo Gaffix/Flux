@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'dart:convert';
+import 'package:share_plus/share_plus.dart';
 import '../providers/flux_provider.dart';
 import '../widgets/mini_player_bar.dart';
 import '../main.dart';
@@ -478,351 +480,243 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Pesquisar música ou artista...',
-                  border: InputBorder.none,
-                  hintStyle: TextStyle(color: Colors.white54),
-                ),
-                style: const TextStyle(color: Colors.white, fontSize: 18),
-                onChanged: _filterTracks,
-              )
-            : Text(widget.playlistName, style: const TextStyle(fontWeight: FontWeight.w700)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
-            onPressed: () {
-              setState(() {
-                _isSearching = !_isSearching;
-                if (!_isSearching) {
-                  _searchController.clear();
-                  _filterTracks('');
-                }
-              });
-            },
-          ),
-          if (!_isSearching && !widget.readOnly)
-            PopupMenuButton<String>(
-              color: const Color(0xFF1E1E2E),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              onSelected: (value) async {
-                final provider = Provider.of<FluxProvider>(context, listen: false);
-                if (value == 'cover') {
-                  _showChangeCoverDialog(context, provider);
-                } else if (value == 'download') {
-                  if (kIsWeb) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text("Download de playlist não disponível no navegador."),
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    );
-                    return;
-                  }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("Baixando '${widget.playlistName}' em segundo plano..."),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  );
-                  await provider.downloadEntirePlaylist(widget.playlistName);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text("Download da playlist concluído!"),
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    );
-                  }
-                } else if (value == 'delete') {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
+      body: Consumer<FluxProvider>(
+        builder: (context, provider, child) {
+          final coverUrl = provider.getPlaylistCover(widget.playlistName);
+          final isShuffled = provider.isPlaylistShuffled(widget.playlistName);
+
+          return Column(
+            children: [
+              Expanded(
+                child: CustomScrollView(
+                  slivers: [
+                    SliverAppBar(
+                      expandedHeight: 280,
+                      pinned: true,
                       backgroundColor: const Color(0xFF1E1E2E),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      title: const Text("Apagar Playlist?"),
-                      content: Text("Tem certeza que deseja apagar '${widget.playlistName}'?"),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancelar", style: TextStyle(color: Colors.white)),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            provider.deletePlaylist(widget.playlistName);
-                            Navigator.pop(context);
-                            Navigator.pop(context);
-                          },
-                          child: const Text("Apagar", style: TextStyle(color: Colors.redAccent)),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'cover',
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.image_outlined, color: FluxApp.accentColor),
-                    title: Text('Alterar Capa'),
-                  ),
-                ),
-                if (!kIsWeb)
-                  const PopupMenuItem(
-                    value: 'download',
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.download_for_offline_rounded, color: FluxApp.accentColor),
-                      title: Text('Baixar Playlist'),
-                    ),
-                  ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.delete_outline, color: Colors.redAccent),
-                    title: Text('Apagar Playlist', style: TextStyle(color: Colors.redAccent)),
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-      body: widget.tracks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.music_off_rounded, size: 64, color: FluxApp.secondaryTextColor.withValues(alpha: 0.4)),
-                  const SizedBox(height: 16),
-                  const Text("Nenhuma música nesta playlist", style: TextStyle(color: FluxApp.secondaryTextColor)),
-                ],
-              ),
-            )
-          : Column(
-              children: [
-                // --- HERO HEADER ---
-                Consumer<FluxProvider>(
-                  builder: (context, provider, _) {
-                    final coverUrl = provider.getPlaylistCover(widget.playlistName);
-                    final isShuffled = provider.isPlaylistShuffled(widget.playlistName);
-                    final trackCount = widget.tracks.length;
-
-                    return Container(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                      child: Column(
-                        children: [
-                          // Cover + info
-                          Row(
-                            children: [
-                              // Cover image
-                              GestureDetector(
-                                onTap: () => _showChangeCoverDialog(context, provider),
-                                child: Stack(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: SizedBox(
-                                        width: 120, height: 120,
-                                        child: coverUrl != null && coverUrl.isNotEmpty
-                                            ? _buildCoverImage(coverUrl)
-                                            : _coverPlaceholder(),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 4, right: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.6),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(Icons.camera_alt_outlined, size: 16, color: Colors.white70),
-                                      ),
-                                    ),
+                      elevation: 0,
+                      flexibleSpace: FlexibleSpaceBar(
+                        titlePadding: const EdgeInsets.only(left: 48, bottom: 16),
+                        title: _isSearching
+                            ? TextField(
+                                controller: _searchController,
+                                autofocus: true,
+                                decoration: const InputDecoration(
+                                  hintText: 'Pesquisar...',
+                                  border: InputBorder.none,
+                                  hintStyle: TextStyle(color: Colors.white54, fontSize: 16),
+                                ),
+                                style: const TextStyle(color: Colors.white, fontSize: 16),
+                                onChanged: _filterTracks,
+                              )
+                            : Text(widget.playlistName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+                        background: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (coverUrl != null && coverUrl.isNotEmpty)
+                              _buildCoverImage(coverUrl)
+                            else
+                              _coverPlaceholder(),
+                            Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    const Color(0xFF1E1E2E).withValues(alpha: 0.8),
+                                    const Color(0xFF1E1E2E),
                                   ],
+                                  stops: const [0.0, 0.7, 1.0],
                                 ),
                               ),
-                              const SizedBox(width: 16),
-                              // Playlist info
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.playlistName,
-                                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white),
-                                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                            ),
+                            Positioned(
+                              bottom: 60,
+                              left: 20,
+                              right: 20,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _PlayModeButton(
+                                      icon: Icons.play_arrow_rounded,
+                                      label: "Tocar",
+                                      isActive: !isShuffled,
+                                      onPressed: () {
+                                        provider.setPlaylistShuffle(widget.playlistName, false);
+                                        provider.playPlaylist(filteredTracks, shuffle: false);
+                                      },
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      '$trackCount música${trackCount != 1 ? 's' : ''}',
-                                      style: const TextStyle(fontSize: 14, color: FluxApp.secondaryTextColor),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _PlayModeButton(
+                                      icon: Icons.shuffle_rounded,
+                                      label: "Aleatório",
+                                      isActive: isShuffled,
+                                      onPressed: () {
+                                        provider.setPlaylistShuffle(widget.playlistName, true);
+                                        provider.playPlaylist(filteredTracks, shuffle: true);
+                                      },
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          // Play / Shuffle buttons
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _PlayModeButton(
-                                  icon: Icons.play_arrow_rounded,
-                                  label: "Tocar",
-                                  isActive: !isShuffled,
-                                  onPressed: () {
-                                    provider.setPlaylistShuffle(widget.playlistName, false);
-                                    provider.playPlaylist(filteredTracks, shuffle: false);
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _PlayModeButton(
-                                  icon: Icons.shuffle_rounded,
-                                  label: "Aleatório",
-                                  isActive: isShuffled,
-                                  onPressed: () {
-                                    provider.setPlaylistShuffle(widget.playlistName, true);
-                                    provider.playPlaylist(filteredTracks, shuffle: true);
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                  },
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
-                ),
-                Expanded(
-                  child: filteredTracks.isEmpty
-                      ? const Center(child: Text("Nenhuma música encontrada."))
-                      : ListView.builder(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          itemCount: filteredTracks.length,
-                          itemBuilder: (context, index) {
-                            final track = filteredTracks[index];
-                            final videoId = track['video_id'] ?? '';
-
-                            return Consumer<FluxProvider>(
-                              builder: (context, provider, child) {
-                                final status = provider.getTrackStatus(videoId);
-                                final isCurrentlyPlaying = provider.currentTrack != null &&
-                                    provider.currentTrack!['track_name'] == track['track_name'] &&
-                                    provider.currentTrack!['artist'] == track['artist'];
-
-                                return Container(
-                                  color: isCurrentlyPlaying
-                                      ? FluxApp.accentColor.withValues(alpha: 0.08)
-                                      : Colors.transparent,
-                                  child: ListTile(
-                                    leading: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(6),
-                                          child: SizedBox(
-                                            width: 48, height: 48,
-                                            child: (track['album_image_url'] ?? '').isNotEmpty
-                                                ? Image.network(
-                                                    track['album_image_url']!,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, __, ___) => Container(
-                                                      color: FluxApp.cardColor,
-                                                      child: const Icon(Icons.music_note, size: 24, color: FluxApp.accentColor),
-                                                    ),
-                                                  )
-                                                : Container(
-                                                    color: FluxApp.cardColor,
-                                                    child: const Icon(Icons.music_note, size: 24, color: FluxApp.accentColor),
-                                                  ),
-                                          ),
-                                        ),
-                                        if (status == "DOWNLOADING" && provider.getProgress(videoId) != null)
-                                          Container(
-                                            width: 48, height: 48,
-                                            decoration: BoxDecoration(
-                                              color: Colors.black45,
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: ValueListenableBuilder<double>(
-                                              valueListenable: provider.getProgress(videoId)!,
-                                              builder: (context, value, _) => CircularProgressIndicator(
-                                                value: value,
-                                                color: FluxApp.accentColor,
-                                                strokeWidth: 3,
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    title: Text(
-                                      track['track_name'] ?? '',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: isCurrentlyPlaying ? FluxApp.accentColor : FluxApp.primaryTextColor,
-                                      ),
-                                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    ),
-                                    subtitle: Text(
-                                      status == "QUEUED" ? "Na fila..." : track['artist'] ?? '',
-                                      style: TextStyle(
-                                        color: status == "QUEUED"
-                                            ? FluxApp.accentColor.withValues(alpha: 0.7)
-                                            : FluxApp.secondaryTextColor,
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (status == "DOWNLOADED")
-                                          const Icon(Icons.check_circle_rounded, color: FluxApp.accentColor, size: 18),
-                                        IconButton(
-                                          icon: Icon(
-                                            provider.isFavorite(track) ? Icons.favorite : Icons.favorite_border,
-                                            size: 20,
-                                            color: provider.isFavorite(track) ? FluxApp.accentColor : FluxApp.secondaryTextColor,
-                                          ),
-                                          onPressed: () => provider.toggleFavorite(track),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.more_vert, size: 20),
-                                          onPressed: () => _showTrackOptions(context, track, provider),
-                                        ),
-                                      ],
-                                    ),
-                                    onTap: () => _onTrackTap(context, track, provider),
+                      actions: [
+                        IconButton(
+                          icon: Icon(_isSearching ? Icons.close : Icons.search),
+                          onPressed: () {
+                            setState(() {
+                              _isSearching = !_isSearching;
+                              if (!_isSearching) {
+                                _searchController.clear();
+                                _filterTracks('');
+                              }
+                            });
+                          },
+                        ),
+                        if (!_isSearching && !widget.readOnly)
+                          PopupMenuButton<String>(
+                            color: const Color(0xFF1E1E2E),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            onSelected: (value) async {
+                              if (value == 'cover') {
+                                _showChangeCoverDialog(context, provider);
+                              } else if (value == 'download') {
+                                if (kIsWeb) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download de playlist não disponível no navegador.")));
+                                  return;
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Baixando '${widget.playlistName}' em segundo plano...")));
+                                await provider.downloadEntirePlaylist(widget.playlistName);
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Download concluído!")));
+                              } else if (value == 'delete') {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    backgroundColor: const Color(0xFF1E1E2E),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                    title: const Text("Apagar Playlist?"),
+                                    content: Text("Tem certeza que deseja apagar '${widget.playlistName}'?"),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar", style: TextStyle(color: Colors.white))),
+                                      TextButton(onPressed: () {
+                                        provider.deletePlaylist(widget.playlistName);
+                                        Navigator.pop(context);
+                                        Navigator.pop(context);
+                                      }, child: const Text("Apagar", style: TextStyle(color: Colors.redAccent))),
+                                    ],
                                   ),
                                 );
-                              },
+                              } else if (value == 'share') {
+                                final jsonString = jsonEncode({
+                                  "name": widget.playlistName,
+                                  "tracks": widget.tracks,
+                                });
+                                Share.share(jsonString, subject: "Playlist: ${widget.playlistName}");
+                              } else if (value == 'toggle_collab') {
+                                provider.toggleCollaborativePlaylist(widget.playlistName);
+                                final isCollab = provider.collaborativePlaylists.contains(widget.playlistName);
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isCollab ? "Colaboração ativada!" : "Colaboração desativada!")));
+                              }
+                            },
+                            itemBuilder: (context) {
+                              final isCollab = provider.collaborativePlaylists.contains(widget.playlistName);
+                              return [
+                                PopupMenuItem(value: 'toggle_collab', child: ListTile(leading: Icon(isCollab ? Icons.group_off : Icons.group_add, color: FluxApp.accentColor), title: Text(isCollab ? 'Desativar Colaboração' : 'Ativar Colaboração'))),
+                                const PopupMenuItem(value: 'share', child: ListTile(leading: Icon(Icons.share_outlined, color: FluxApp.accentColor), title: Text('Compartilhar JSON'))),
+                                const PopupMenuItem(value: 'cover', child: ListTile(leading: Icon(Icons.image_outlined, color: FluxApp.accentColor), title: Text('Alterar Capa'))),
+                              if (!kIsWeb)
+                                const PopupMenuItem(value: 'download', child: ListTile(leading: Icon(Icons.download_for_offline_rounded, color: FluxApp.accentColor), title: Text('Baixar Playlist'))),
+                                const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(Icons.delete_outline, color: Colors.redAccent), title: Text('Apagar Playlist', style: TextStyle(color: Colors.redAccent)))),
+                              ];
+                            },
+                          ),
+                      ],
+                    ),
+                    if (filteredTracks.isEmpty)
+                      SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.music_off_rounded, size: 64, color: FluxApp.secondaryTextColor.withValues(alpha: 0.4)),
+                              const SizedBox(height: 16),
+                              const Text("Nenhuma música encontrada", style: TextStyle(color: FluxApp.secondaryTextColor)),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final track = filteredTracks[index];
+                            final videoId = track['video_id'] ?? '';
+                            final status = provider.getTrackStatus(videoId);
+                            final isCurrentlyPlaying = provider.currentTrack != null &&
+                                provider.currentTrack!['track_name'] == track['track_name'] &&
+                                provider.currentTrack!['artist'] == track['artist'];
+
+                            return Container(
+                              color: isCurrentlyPlaying ? FluxApp.accentColor.withValues(alpha: 0.08) : Colors.transparent,
+                              child: ListTile(
+                                leading: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: SizedBox(
+                                        width: 48, height: 48,
+                                        child: (track['album_image_url'] ?? '').isNotEmpty
+                                            ? _buildCoverImage(track['album_image_url']!)
+                                            : Container(color: FluxApp.cardColor, child: const Icon(Icons.music_note, size: 24, color: FluxApp.accentColor)),
+                                      ),
+                                    ),
+                                    if (status == "DOWNLOADING" && provider.getProgress(videoId) != null)
+                                      Container(
+                                        width: 48, height: 48,
+                                        decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(6)),
+                                        child: ValueListenableBuilder<double>(
+                                          valueListenable: provider.getProgress(videoId)!,
+                                          builder: (context, value, _) => CircularProgressIndicator(value: value, color: FluxApp.accentColor, strokeWidth: 3),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                title: Text(track['track_name'] ?? '', style: TextStyle(fontWeight: FontWeight.w600, color: isCurrentlyPlaying ? FluxApp.accentColor : FluxApp.primaryTextColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                subtitle: Text(status == "QUEUED" ? "Na fila..." : track['artist'] ?? '', style: TextStyle(color: status == "QUEUED" ? FluxApp.accentColor.withValues(alpha: 0.7) : FluxApp.secondaryTextColor, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (status == "DOWNLOADED")
+                                      const Icon(Icons.check_circle_rounded, color: FluxApp.accentColor, size: 18),
+                                    IconButton(
+                                      icon: Icon(provider.isFavorite(track) ? Icons.favorite : Icons.favorite_border, size: 20, color: provider.isFavorite(track) ? FluxApp.accentColor : FluxApp.secondaryTextColor),
+                                      onPressed: () => provider.toggleFavorite(track),
+                                    ),
+                                    IconButton(icon: const Icon(Icons.more_vert, size: 20), onPressed: () => _showTrackOptions(context, track, provider)),
+                                  ],
+                                ),
+                                onTap: () => _onTrackTap(context, track, provider),
+                              ),
                             );
                           },
+                          childCount: filteredTracks.length,
                         ),
+                      ),
+                  ],
                 ),
-                const SafeArea(top: false, child: MiniPlayerBar()),
-              ],
-            ),
+              ),
+              const SafeArea(top: false, child: MiniPlayerBar()),
+            ],
+          );
+        },
+      ),
     );
   }
 

@@ -650,6 +650,30 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
+                  // Not interested icon overlay
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _recommendations.removeAt(index);
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.visibility_off,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

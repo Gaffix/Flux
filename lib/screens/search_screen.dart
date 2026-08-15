@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart';
 import '../providers/flux_provider.dart';
@@ -19,12 +20,39 @@ class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Video> _searchResults = [];
   bool _isLoading = false;
+  List<String> _recentSearches = [];
 
   @override
-  void dispose() {
-    yt.close();
-    _searchController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadRecentSearches();
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _recentSearches = prefs.getStringList('flux_recent_searches') ?? [];
+    });
+  }
+
+  Future<void> _saveRecentSearch(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_recentSearches.contains(query)) {
+      _recentSearches.remove(query);
+    }
+    _recentSearches.insert(0, query);
+    if (_recentSearches.length > 10) {
+      _recentSearches = _recentSearches.sublist(0, 10);
+    }
+    await prefs.setStringList('flux_recent_searches', _recentSearches);
+    setState(() {});
+  }
+
+  Future<void> _removeRecentSearch(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    _recentSearches.remove(query);
+    await prefs.setStringList('flux_recent_searches', _recentSearches);
+    setState(() {});
   }
 
   Future<void> _performSearch(String query) async {
@@ -36,10 +64,18 @@ class _SearchScreenState extends State<SearchScreen> {
         _searchResults = results.whereType<Video>().toList();
         _isLoading = false;
       });
+      _saveRecentSearch(query);
     } catch (e) {
       debugPrint("FLUX: Search error: $e");
       setState(() => _isLoading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    yt.close();
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _showPlaylistOptions(Video video) {
@@ -190,7 +226,26 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   )
                   : _searchResults.isEmpty
-                  ? Center(
+                  ? _recentSearches.isNotEmpty
+                    ? ListView.builder(
+                        itemCount: _recentSearches.length,
+                        itemBuilder: (context, index) {
+                          final query = _recentSearches[index];
+                          return ListTile(
+                            leading: const Icon(Icons.history, color: FluxApp.secondaryTextColor),
+                            title: Text(query, style: const TextStyle(color: Colors.white)),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.close, color: FluxApp.secondaryTextColor, size: 20),
+                              onPressed: () => _removeRecentSearch(query),
+                            ),
+                            onTap: () {
+                              _searchController.text = query;
+                              _performSearch(query);
+                            },
+                          );
+                        },
+                      )
+                    : Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -201,9 +256,9 @@ class _SearchScreenState extends State<SearchScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          "Pesquise por músicas ou artistas",
+                          'Pesquise por músicas, artistas ou álbuns',
                           style: TextStyle(
-                            color: FluxApp.secondaryTextColor,
+                            color: FluxApp.secondaryTextColor.withOpacity(0.6),
                             fontSize: 16,
                           ),
                         ),

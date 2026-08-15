@@ -9,8 +9,30 @@ import 'artist_screen.dart';
 import 'queue_screen.dart';
 import 'equalizer_screen.dart';
 
-class MusicScreen extends StatelessWidget {
+class MusicScreen extends StatefulWidget {
   const MusicScreen({super.key});
+
+  @override
+  State<MusicScreen> createState() => _MusicScreenState();
+}
+
+class _MusicScreenState extends State<MusicScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _playPauseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _playPauseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
+  @override
+  void dispose() {
+    _playPauseController.dispose();
+    super.dispose();
+  }
 
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
@@ -62,14 +84,24 @@ class MusicScreen extends StatelessWidget {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // --- TOP BAR ---
-                Stack(
+          child: GestureDetector(
+            onHorizontalDragEnd: (details) {
+              if (details.primaryVelocity != null) {
+                if (details.primaryVelocity! < -300) {
+                  provider.skipNext();
+                } else if (details.primaryVelocity! > 300) {
+                  provider.skipPrevious();
+                }
+              }
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // --- TOP BAR ---
+                  Stack(
                   alignment: Alignment.center,
                   children: [
                     Align(
@@ -103,6 +135,11 @@ class MusicScreen extends StatelessWidget {
                             icon: const Icon(Icons.timer_outlined,
                                 color: FluxApp.accentColor, size: 24),
                             onPressed: () => _showSleepTimerDialog(context, provider),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.speed_rounded,
+                                color: FluxApp.accentColor, size: 24),
+                            onPressed: () => _showPlaybackControlsDialog(context, provider),
                           ),
                         ],
                       ),
@@ -281,6 +318,7 @@ class MusicScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 20),
+                const SizedBox(height: 8),
 
                 // --- BARRA DE PROGRESSO (SLIDER) ---
                 StreamBuilder<Duration>(
@@ -399,6 +437,13 @@ class MusicScreen extends StatelessWidget {
                       stream: provider.player.playingStream,
                       builder: (context, snapshot) {
                         final isPlaying = snapshot.data ?? false;
+                        
+                        if (isPlaying) {
+                          _playPauseController.forward();
+                        } else {
+                          _playPauseController.reverse();
+                        }
+                        
                         return Container(
                           decoration: BoxDecoration(
                             color: FluxApp.accentColor,
@@ -415,18 +460,13 @@ class MusicScreen extends StatelessWidget {
                           child: IconButton(
                             iconSize: 56,
                             padding: const EdgeInsets.all(14),
-                            icon: Icon(
-                              isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
+                            icon: AnimatedIcon(
+                              icon: AnimatedIcons.play_pause,
+                              progress: _playPauseController,
                               color: Colors.white,
                             ),
                             onPressed: () {
-                              if (isPlaying) {
-                                provider.player.pause();
-                              } else {
-                                provider.player.play();
-                              }
+                              provider.togglePlayPause();
                             },
                           ),
                         );
@@ -482,6 +522,7 @@ class MusicScreen extends StatelessWidget {
               ],
             ),
           ),
+          ),
         ),
       ),
     );
@@ -511,10 +552,12 @@ class MusicScreen extends StatelessWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (provider.sleepTimerEndTime != null) ...[
-                const Text(
-                  "Timer ativo. A música irá parar em breve.",
-                  style: TextStyle(color: FluxApp.secondaryTextColor),
+              if (provider.sleepTimerEndTime != null || provider.isStoppingAfterCurrentTrack) ...[
+                Text(
+                  provider.isStoppingAfterCurrentTrack 
+                    ? "Timer ativo. A música irá parar ao terminar." 
+                    : "Timer ativo. A música irá parar em breve.",
+                  style: const TextStyle(color: FluxApp.secondaryTextColor),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
@@ -530,6 +573,23 @@ class MusicScreen extends StatelessWidget {
                 _timerOption(context, provider, 30, "30 Minutos"),
                 _timerOption(context, provider, 45, "45 Minutos"),
                 _timerOption(context, provider, 60, "1 Hora"),
+                const Divider(color: Colors.white24),
+                ListTile(
+                  title: const Text("Parar ao fim da música", style: TextStyle(color: Colors.white)),
+                  trailing: Switch(
+                    value: provider.isStoppingAfterCurrentTrack,
+                    activeColor: FluxApp.accentColor,
+                    onChanged: (val) {
+                      if (val) {
+                        provider.startSleepTimer(const Duration(minutes: 999), stopAtEnd: true);
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("A música vai parar ao terminar.")),
+                        );
+                      }
+                    },
+                  ),
+                ),
               ]
             ],
           ),
@@ -546,6 +606,79 @@ class MusicScreen extends StatelessWidget {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Sleep timer definido para $label")),
+        );
+      },
+    );
+  }
+
+  void _showPlaybackControlsDialog(BuildContext context, FluxProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: FluxApp.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("Controles de Reprodução", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Velocidade", style: TextStyle(color: Colors.white70)),
+                      Text("${provider.playbackSpeed.toStringAsFixed(2)}x", style: const TextStyle(color: FluxApp.accentColor, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  Slider(
+                    value: provider.playbackSpeed,
+                    min: 0.5,
+                    max: 2.0,
+                    divisions: 15,
+                    activeColor: FluxApp.accentColor,
+                    onChanged: (val) {
+                      setModalState(() {});
+                      provider.setPlaybackSpeed(val);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Pitch (Tom)", style: TextStyle(color: Colors.white70)),
+                      Text("${provider.playbackPitch.toStringAsFixed(2)}x", style: const TextStyle(color: FluxApp.accentColor, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  Slider(
+                    value: provider.playbackPitch,
+                    min: 0.5,
+                    max: 2.0,
+                    divisions: 15,
+                    activeColor: FluxApp.accentColor,
+                    onChanged: (val) {
+                      setModalState(() {});
+                      provider.setPlaybackPitch(val);
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: FluxApp.accentColor),
+                    onPressed: () {
+                      provider.setPlaybackSpeed(1.0);
+                      provider.setPlaybackPitch(1.0);
+                      setModalState(() {});
+                    },
+                    child: const Text("Resetar Normal", style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            );
+          }
         );
       },
     );

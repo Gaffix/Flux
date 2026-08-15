@@ -21,6 +21,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _selectedQuality;
   late bool _isPublic;
   late bool _showTrending;
+  late bool _crossfadeEnabled;
 
   @override
   void initState() {
@@ -31,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _selectedQuality = provider.audioQuality;
     _isPublic = provider.isPublic;
     _showTrending = provider.showTrending;
+    _crossfadeEnabled = provider.crossfadeEnabled;
   }
 
   @override
@@ -58,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final provider = Provider.of<FluxProvider>(context);
     final user = Supabase.instance.client.auth.currentUser;
     final userEmail = user?.email ?? 'Usuário não logado';
 
@@ -90,10 +93,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: FluxApp.surfaceColor,
-                    child: Icon(Icons.person, color: Colors.white),
-                  ),
+                  leading: provider.avatarUrl.isNotEmpty 
+                      ? CircleAvatar(
+                          backgroundImage: NetworkImage(provider.avatarUrl),
+                          backgroundColor: FluxApp.surfaceColor,
+                        )
+                      : const CircleAvatar(
+                          backgroundColor: FluxApp.surfaceColor,
+                          child: Icon(Icons.person, color: Colors.white),
+                        ),
                   title: Text(userEmail, style: const TextStyle(color: Colors.white)),
                   subtitle: const Text('Plano Free', style: TextStyle(color: FluxApp.secondaryTextColor)),
                 ),
@@ -116,6 +124,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (val) {
                       final provider = Provider.of<FluxProvider>(context, listen: false);
                       provider.updateUsername(val.trim());
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: TextField(
+                    controller: TextEditingController(text: provider.avatarUrl),
+                    decoration: InputDecoration(
+                      labelText: 'URL da Imagem de Perfil',
+                      labelStyle: const TextStyle(color: FluxApp.secondaryTextColor),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.05),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    style: const TextStyle(color: FluxApp.primaryTextColor),
+                    onChanged: (val) {
+                      provider.updateAvatarUrl(val.trim());
                     },
                   ),
                 ),
@@ -226,6 +254,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Provider.of<FluxProvider>(context, listen: false).toggleShowTrending(val);
                   },
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Ativar Transição Suave (Crossfade)', style: TextStyle(color: Colors.white, fontSize: 15)),
+                  value: _crossfadeEnabled,
+                  activeColor: FluxApp.accentColor,
+                  onChanged: (val) {
+                    setState(() => _crossfadeEnabled = val);
+                    Provider.of<FluxProvider>(context, listen: false).toggleCrossfade(val);
+                  },
+                ),
                 const SizedBox(height: 12),
                 // Equalizer shortcut
                 ListTile(
@@ -240,10 +278,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     );
                   },
                 ),
-
               ],
             ),
           ),
+          const SizedBox(height: 32),
+
+          // SEÇÃO: ARMAZENAMENTO
+          const Text(
+            'ARMAZENAMENTO',
+            style: TextStyle(
+              color: FluxApp.accentColor,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: FluxApp.cardColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: FutureBuilder<String>(
+              future: Provider.of<FluxProvider>(context, listen: false).calculateStorageSpace(),
+              builder: (context, snapshot) {
+                final spaceUsed = snapshot.data ?? "Calculando...";
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.storage_rounded, color: Colors.white),
+                      title: const Text('Espaço Utilizado', style: TextStyle(color: Colors.white, fontSize: 15)),
+                      trailing: Text(spaceUsed, style: const TextStyle(color: FluxApp.accentColor, fontWeight: FontWeight.bold)),
+                    ),
+                    const Divider(color: FluxApp.surfaceColor, height: 1),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
+                      title: const Text('Limpar Downloads e Cache', style: TextStyle(color: Colors.redAccent, fontSize: 15)),
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            backgroundColor: FluxApp.cardColor,
+                            title: const Text("Limpar Armazenamento", style: TextStyle(color: Colors.white)),
+                            content: const Text("Isso apagará todas as músicas baixadas. Deseja continuar?", style: TextStyle(color: FluxApp.secondaryTextColor)),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text("Cancelar", style: TextStyle(color: FluxApp.secondaryTextColor)),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  Navigator.pop(context);
+                                  await Provider.of<FluxProvider>(context, listen: false).clearAllDownloads();
+                                  if (context.mounted) {
+                                    setState(() {}); // Refresh storage space
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Armazenamento limpo com sucesso!')),
+                                    );
+                                  }
+                                },
+                                child: const Text("Limpar", style: TextStyle(color: Colors.redAccent)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 32),
         ],
       ),
     );

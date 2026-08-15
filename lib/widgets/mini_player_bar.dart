@@ -7,8 +7,30 @@ import '../providers/flux_provider.dart';
 import '../screens/lyrics_view.dart';
 import '../screens/music_screen.dart';
 
-class MiniPlayerBar extends StatelessWidget {
+class MiniPlayerBar extends StatefulWidget {
   const MiniPlayerBar({super.key});
+
+  @override
+  State<MiniPlayerBar> createState() => _MiniPlayerBarState();
+}
+
+class _MiniPlayerBarState extends State<MiniPlayerBar> with SingleTickerProviderStateMixin {
+  late AnimationController _playPauseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _playPauseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
+  @override
+  void dispose() {
+    _playPauseController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +50,15 @@ class MiniPlayerBar extends StatelessWidget {
             fullscreenDialog: true,
           ),
         );
+      },
+      onHorizontalDragEnd: (details) {
+        if (details.primaryVelocity != null) {
+          if (details.primaryVelocity! < -300) {
+            provider.skipNext();
+          } else if (details.primaryVelocity! > 300) {
+            provider.skipPrevious();
+          }
+        }
       },
       behavior: HitTestBehavior.opaque,
       child: Container(
@@ -198,8 +229,7 @@ class MiniPlayerBar extends StatelessWidget {
                               const BoxConstraints(minWidth: 36, minHeight: 36),
                         ),
                         IconButton(
-                          icon:
-                              const Icon(Icons.skip_previous_rounded, size: 24),
+                          icon: const Icon(Icons.skip_previous_rounded, size: 24),
                           onPressed: () => provider.skipPrevious(),
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
@@ -210,17 +240,21 @@ class MiniPlayerBar extends StatelessWidget {
                           stream: provider.player.playerStateStream,
                           builder: (context, snapshot) {
                             final playing = snapshot.data?.playing ?? false;
+                            
+                            if (playing) {
+                              _playPauseController.forward();
+                            } else {
+                              _playPauseController.reverse();
+                            }
+                            
                             return IconButton(
-                              icon: Icon(
-                                playing
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
+                              icon: AnimatedIcon(
+                                icon: AnimatedIcons.play_pause,
+                                progress: _playPauseController,
                                 size: 30,
                                 color: FluxApp.accentColor,
                               ),
-                              onPressed: () => playing
-                                  ? provider.player.pause()
-                                  : provider.player.play(),
+                              onPressed: () => provider.togglePlayPause(),
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(
