@@ -1,5 +1,9 @@
 # 🚀 Flux — Guia de Configuração e Execução
 
+O endereço configurado em **Configurações > Servidor Ngrok** é usado por todas as consultas do app. A chave antiga `server_url` é migrada automaticamente para `flux_server_url`.
+
+Se o servidor estiver indisponível, as consultas retornam uma lista vazia e o app permanece utilizável com a biblioteca e playlists locais; confira a URL e reinicie o servidor para tentar novamente.
+
 ---
 
 ## 📋 Pré-requisitos

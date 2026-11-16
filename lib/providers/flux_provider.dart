@@ -15,6 +15,7 @@ import 'package:palette_generator/palette_generator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/listening_history_service.dart';
 import '../services/equalizer_service.dart';
+import '../services/server_config.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
@@ -421,6 +422,9 @@ class FluxProvider extends ChangeNotifier {
     }
   }
 
+  /// Re-reads the authenticated user's data after login.
+  Future<void> reloadUserData() => _loadFromPrefs();
+
   Future<void> enqueueDownload(Map<String, String> track) async {
     final videoId = await _resolveVideoId(track);
     if (videoId == null) return;
@@ -524,6 +528,12 @@ class FluxProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final user = Supabase.instance.client.auth.currentUser;
 
+    // An authenticated session always starts from its own remote record.
+    // This prevents a previous account's in-memory/cache data from leaking into it.
+    if (user != null) {
+      playlists = {"Favoritas": []};
+    }
+
     String? savedData;
 
     if (user != null) {
@@ -551,7 +561,7 @@ class FluxProvider extends ChangeNotifier {
       }
     }
 
-    if (savedData == null) {
+    if (savedData == null && user == null) {
       savedData = prefs.getString('flux_data');
     }
 
@@ -571,7 +581,7 @@ class FluxProvider extends ChangeNotifier {
       }
     }
     
-    baseUrl = prefs.getString('flux_server_url') ?? "";
+    baseUrl = await getConfiguredServerUrl();
     _audioQuality = prefs.getString('flux_audio_quality') ?? 'normal';
     _showTrending = prefs.getBool('flux_show_trending') ?? true;
     
@@ -589,9 +599,8 @@ class FluxProvider extends ChangeNotifier {
   }
 
   Future<void> setBaseUrl(String url) async {
-    baseUrl = url;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('flux_server_url', url);
+    baseUrl = normalizeServerUrl(url);
+    await setConfiguredServerUrl(baseUrl);
     notifyListeners();
   }
 

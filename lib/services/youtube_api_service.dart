@@ -1,12 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'server_config.dart';
 
 class YouTubeApiService {
   Future<String> _getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Use localhost fallback for development
-    return prefs.getString('server_url') ?? 'http://127.0.0.1:9000';
+    return getConfiguredServerUrl();
   }
 
   Future<List<Map<String, String>>> fetchTrending() async {

@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
 import 'main_page.dart';
+import 'package:provider/provider.dart';
+import '../providers/flux_provider.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -65,6 +67,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
       
       if (mounted && _isLogin) {
+        await context.read<FluxProvider>().reloadUserData();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const MainPage()),
         );
