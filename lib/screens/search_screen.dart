@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../main.dart';
 import '../providers/flux_provider.dart';
@@ -15,14 +14,12 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final YoutubeExplode yt = YoutubeExplode();
   final TextEditingController _searchController = TextEditingController();
-  List<Video> _searchResults = [];
+  List<Map<String, String>> _searchResults = [];
   bool _isLoading = false;
 
   @override
   void dispose() {
-    yt.close();
     _searchController.dispose();
     super.dispose();
   }
@@ -31,18 +28,39 @@ class _SearchScreenState extends State<SearchScreen> {
     if (query.trim().isEmpty) return;
     setState(() => _isLoading = true);
     try {
-      final results = await yt.search.search(query);
+      final baseUrl = Provider.of<FluxProvider>(context, listen: false).baseUrl;
+      final response = await http.get(
+        Uri.parse('$baseUrl/search?q=${Uri.encodeQueryComponent(query)}'),
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Search failed (${response.statusCode})');
+      }
+      final results =
+          (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+      if (!mounted) return;
       setState(() {
-        _searchResults = results.whereType<Video>().toList();
+        _searchResults =
+            results
+                .map(
+                  (video) => <String, String>{
+                    'track_name': video['title']?.toString() ?? 'Unknown title',
+                    'artist': video['channel']?.toString() ?? 'YouTube',
+                    'video_id': video['video_id']?.toString() ?? '',
+                    'album_image_url':
+                        'https://i.ytimg.com/vi/${video['video_id']}/hqdefault.jpg',
+                  },
+                )
+                .where((video) => video['video_id']!.isNotEmpty)
+                .toList();
         _isLoading = false;
       });
     } catch (e) {
       debugPrint("FLUX: Search error: $e");
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showPlaylistOptions(Video video) {
+  void _showPlaylistOptions(Map<String, String> video) {
     final provider = Provider.of<FluxProvider>(context, listen: false);
     final textController = TextEditingController();
 
@@ -62,10 +80,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   const Text(
                     "Salvar em Playlist",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 10),
                   // Playlists existentes
@@ -77,7 +92,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       ),
                       title: Text(name),
                       onTap: () {
-                        provider.addToPlaylist(name, video);
+                        provider.addTrackToPlaylist(name, video);
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text("Adicionado a $name")),
@@ -130,22 +145,18 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Future<void> _onVideoTap(BuildContext context, Video video) async {
+  Future<void> _onVideoTap(
+    BuildContext context,
+    Map<String, String> trackMap,
+  ) async {
     final provider = Provider.of<FluxProvider>(context, listen: false);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text("Carregando ${video.title}..."),
+        content: Text("Carregando ${trackMap['track_name']}..."),
         behavior: SnackBarBehavior.floating,
       ),
     );
-
-    final trackMap = {
-      "track_name": video.title,
-      "artist": video.author,
-      "album_image_url": video.thumbnails.lowResUrl,
-      "video_id": video.id.value,
-    };
 
     provider.playPlaylist([trackMap]);
   }
@@ -217,9 +228,9 @@ class _SearchScreenState extends State<SearchScreen> {
                       final video = _searchResults[index];
                       return ListTile(
                         leading:
-                            video.thumbnails.lowResUrl.isNotEmpty
+                            video['album_image_url']!.isNotEmpty
                                 ? Image.network(
-                                  video.thumbnails.lowResUrl,
+                                  video['album_image_url']!,
                                   width: 50,
                                   height: 50,
                                   fit: BoxFit.cover,
@@ -232,28 +243,28 @@ class _SearchScreenState extends State<SearchScreen> {
                                 )
                                 : const Icon(Icons.music_note, size: 50),
                         title: Text(
-                          video.title,
+                          video['track_name']!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(video.author),
+                        subtitle: Text(video['artist']!),
                         trailing: Consumer<FluxProvider>(
                           builder: (context, provider, child) {
-                            final trackMap = {
-                              "track_name": video.title,
-                              "artist": video.author,
-                              "album_image_url": video.thumbnails.lowResUrl,
-                              "video_id": video.id.value,
-                            };
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
                                   icon: Icon(
-                                    provider.isFavorite(trackMap) ? Icons.favorite : Icons.favorite_border,
-                                    color: provider.isFavorite(trackMap) ? FluxApp.accentColor : FluxApp.secondaryTextColor,
+                                    provider.isFavorite(video)
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color:
+                                        provider.isFavorite(video)
+                                            ? FluxApp.accentColor
+                                            : FluxApp.secondaryTextColor,
                                   ),
-                                  onPressed: () => provider.toggleFavorite(trackMap),
+                                  onPressed:
+                                      () => provider.toggleFavorite(video),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.playlist_add),

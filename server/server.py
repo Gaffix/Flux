@@ -64,13 +64,17 @@ def search():
             'extract_flat': True,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query} audio", download=False)
-            if 'entries' in info and len(info['entries']) > 0:
-                video = info['entries'][0]
-                return jsonify({
-                    "video_id": video.get('id'),
-                    "title": video.get('title')
-                })
+            info = ydl.extract_info(f"ytsearch10:{query} audio", download=False)
+            videos = []
+            for video in info.get('entries', []):
+                if video.get('id'):
+                    videos.append({
+                        "video_id": video['id'],
+                        "title": video.get('title'),
+                        "channel": video.get('uploader') or video.get('channel'),
+                    })
+            if videos:
+                return jsonify(videos)
             else:
                 return jsonify({"error": "No results found"}), 404
     except Exception as e:
