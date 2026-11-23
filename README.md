@@ -41,18 +41,19 @@ O app será compilado e iniciado diretamente no seu dispositivo.
 
 ## 🐳 2. Rodando o Servidor de Forma Automatizada (Qualquer Máquina)
 
-Basta rodar o comando abaixo em qualquer terminal Linux ou WSL, substituindo `SEU_TOKEN_REAL_DO_NGROK` com a credencial do seu painel do Ngrok:
+No notebook, instale e abra o Docker Desktop. Em seguida, clone este repositório e rode os comandos abaixo na pasta do projeto, substituindo `SEU_TOKEN_REAL_DO_NGROK` com a credencial do seu painel do Ngrok:
 
 ```bash
+git clone https://github.com/Gaffix/Flux.git
+cd Flux
 docker build -t flux-server:local ./server
 docker run -it --rm -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_NGROK flux-server:local
 
 ```
 
-Desse modo, toda vez que o comando ser executado, será gerado um link aleatório. Para utililzar um link permanente, ele deve ser criado em "https://dashboard.ngrok.com/domains", clicando na opção "New Domain". O comando deve então ser executado utilizando um novo argumento:
+Isso inicia o mesmo código do servidor local através do Gunicorn e gera um link aleatório do ngrok. Para usar um domínio permanente, crie-o em "https://dashboard.ngrok.com/domains" e rode:
 
 ```bash
-docker build -t flux-server:local ./server
 docker run -it --rm -p 9000:9000 -e NGROK_AUTHTOKEN=SEU_TOKEN_NGROK -e NGROK_DOMAIN=SEU_DOMINIO_NGROK flux-server:local
 ```
 
